@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>进销存 ERP</title>
+<style>
+  :root {
+    --bg: #f5f6fa; --card: #ffffff; --border: #e0e3ea;
+    --text: #1a1d2e; --text-sub: #6b7280;
+    --accent: #3b7de8; --accent-light: #eef3fd;
+    --green: #22a65e; --green-light: #edf7f2;
+    --red: #e05252; --red-light: #fdf0f0;
+    --amber: #c97a10; --amber-light: #fef6e7;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; }
+  header h1 span { color: var(--accent); }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  main { flex: 1; padding: 20px 24px; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+  /* sync indicator */
+  #syncDot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; margin-right: 4px; }
+  #syncDot.ok { background: var(--green); }
+  #syncDot.err { background: var(--red); }
+  #syncDot.loading { background: var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: opacity .15s, background .15s; }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { background: transparent; color: var(--text-sub); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--bg); opacity: 1; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { background: var(--red-light); color: var(--red); border: 1px solid #f5c0c0; }
+
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .stat-card .label { font-size: 12px; color: var(--text-sub); margin-bottom: 6px; }
+  .stat-card .value { font-size: 22px; font-weight: 600; }
+  .stat-card.green .value { color: var(--green); }
+  .stat-card.red .value { color: var(--red); }
+  .stat-card.amber .value { color: var(--amber); }
+  .stat-card.blue .value { color: var(--accent); }
+
+  .tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; margin-bottom: 16px; width: fit-content; }
+  .tab { padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text-sub); transition: all .15s; border: none; background: transparent; }
+  .tab.active { background: var(--accent); color: #fff; font-weight: 500; }
+
+  .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .table-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 12px; flex-wrap: wrap; }
+  .search-box { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; flex: 1; max-width: 280px; }
+  .search-box input { border: none; background: transparent; font-size: 13px; color: var(--text); width: 100%; outline: none; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 500; color: var(--text-sub); background: var(--bg); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--accent-light); }
+  .product-cell { display: flex; align-items: center; gap: 10px; }
+  .product-img { width: 40px; height: 40px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--text-sub); font-size: 18px; overflow: hidden; }
+  .product-img img { width: 100%; height: 100%; object-fit: cover; }
+  .product-name { font-weight: 500; font-size: 13px; }
+  .product-sku { font-size: 11px; color: var(--text-sub); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .badge-stock { background: var(--amber-light); color: var(--amber); }
+  .badge-low { background: var(--red-light); color: var(--red); }
+  .actions-cell { display: flex; gap: 6px; }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--text-sub); }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+
+  /* Modal */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { background: var(--card); border-radius: 14px; width: 100%; max-width: 500px; box-shadow: 0 8px 32px rgba(0,0,0,.18); max-height: 90vh; overflow-y: auto; }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .modal-header h2 { font-size: 15px; font-weight: 600; }
+  .modal-close { background: none; border: none; font-size: 20px; color: var(--text-sub); cursor: pointer; line-height: 1; }
+  .modal-body { padding: 20px; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* Form */
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 12px; color: var(--text-sub); margin-bottom: 5px; font-weight: 500; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  input, select, textarea { width: 100%; padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text); background: var(--card); outline: none; transition: border-color .15s; font-family: inherit; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  .img-preview { width: 72px; height: 72px; border-radius: 8px; border: 1px dashed var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 24px; overflow: hidden; flex-shrink: 0; cursor: pointer; }
+  .img-preview img { width: 100%; height: 100%; object-fit: cover; }
+  .img-row { display: flex; align-items: flex-start; gap: 12px; }
+  .img-input-wrap { flex: 1; }
+
+  /* Setup wizard */
+  .setup-box { max-width: 620px; margin: 60px auto; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 32px; }
+  .setup-box h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  .setup-box p { font-size: 13px; color: var(--text-sub); margin-bottom: 20px; line-height: 1.6; }
+  .setup-steps { counter-reset: step; }
+  .setup-step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .setup-step-num { counter-increment: step; min-width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+  .setup-step-num::before { content: counter(step); }
+  .setup-step-text { font-size: 13px; line-height: 1.6; }
+  .setup-step-text code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+  .setup-step-text a { color: var(--accent); }
+  .config-area { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px; }
+  .err-tip { font-size: 12px; color: var(--red); margin-top: 4px; display: none; }
+  .info-box { background: var(--accent-light); border: 1px solid #c5d8f8; border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #2563c4; margin-bottom: 16px; line-height: 1.6; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 20px; right: 20px; background: #1a1d2e; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 400; animation: slideUp .25s ease; }
+  @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* Pagination */
+  .pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-sub); }
+  .page-btns { display: flex; gap: 4px; }
+  .page-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; background: var(--card); font-size: 12px; }
+  .page-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .page-btn:disabled { opacity: .4; cursor: default; }
+
+  .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: var(--card); color: var(--text-sub); transition: all .15s; }
+  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  @media (max-width: 640px) {
+    main { padding: 12px; }
+    .form-row { grid-template-columns: 1fr; }
+    th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ SETUP WIZARD (shown when no Firebase config) ═══ -->
+<div id="setupScreen" style="display:none; padding: 20px;">
+  <div class="setup-box">
+    <h2>🔥 连接 Firebase 实现多设备同步</h2>
+    <p>只需 3 步，所有团队成员打开同一个 HTML 文件就能实时共享数据。完全免费（Spark 套餐足够日常使用）。</p>
+
+    <div class="info-box">
+      💡 配置信息保存在本地浏览器，每台设备首次打开需要填写一次。之后直接使用，数据实时同步。
+    </div>
+
+    <div class="setup-steps">
+      <div class="setup-step">
+        <div class="setup-step-num"></div>
+        <div class="setup-step-text">
+          打开 <a href="https://console.firebase.google.com/" target="_blank">Firebase Console</a>，
+          点击「Add project」→ 输入项目名（如 <code>erp-inventory</code>）→ 创建完成后点击「Web」图标 (&lt;/&gt;) 注册应用。
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num"></div>
+        <div class="setup-step-text">
+          在左侧菜单 「Build」→「Firestore Database」→「Create database」→ 选 <code>Start in test mode</code>（方便测试，30天后需调规则）→ 选择最近的区域。
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num"></div>
+        <div class="setup-step-text">
+          回到「Project settings」→「Your apps」→ 复制 <code>firebaseConfig</code> 里的各字段，粘贴到下方。
+        </div>
+      </div>
+    </div>
+
+    <div class="config-area">
+      <div class="form-row">
+        <div class="form-group">
+          <label>API Key *</label>
+          <input id="cfg_apiKey" placeholder="AIzaSy...">
+        </div>
+        <div class="form-group">
+          <label>Auth Domain *</label>
+          <input id="cfg_authDomain" placeholder="xxx.firebaseapp.com">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Project ID *</label>
+        <input id="cfg_projectId" placeholder="erp-inventory-xxxxx">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Storage Bucket</label>
+          <input id="cfg_storageBucket" placeholder="xxx.appspot.com">
+        </div>
+        <div class="form-group">
+          <label>Messaging Sender ID</label>
+          <input id="cfg_messagingSenderId" placeholder="123456789">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>App ID *</label>
+        <input id="cfg_appId" placeholder="1:123:web:abc...">
+      </div>
+      <div id="cfgErr" class="err-tip">请填写 API Key、Auth Domain、Project ID 和 App ID</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" onclick="saveConfig()">连接 Firebase</button>
+        <button class="btn btn-ghost" onclick="useLocalMode()">暂时用本地模式</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAIN APP ═══ -->
+<div id="mainApp" style="display:none">
+  <div class="app">
+    <header>
+      <h1>📦 进销存 <span>ERP</span></h1>
+      <div class="header-actions">
+        <span id="syncDot" title="同步状态"></span>
+        <span id="syncLabel" style="font-size:12px;color:var(--text-sub);margin-right:4px"></span>
+        <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ 导出</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importFile').click()">⬆ 导入</button>
+        <button class="btn btn-ghost btn-sm" onclick="showSetup()">⚙ 配置</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      </div>
+    </header>
+
+    <main>
+      <div class="summary" id="summaryCards"></div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('products')">产品列表</button>
+        <button class="tab" onclick="switchTab('in')">进货记录</button>
+        <button class="tab" onclick="switchTab('out')">出库记录</button>
+      </div>
+
+      <!-- Products Tab -->
+      <div id="tab-products">
+        <div class="filter-chips" id="categoryChips"></div>
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <div class="search-box">
+              <span style="color:var(--text-sub)">🔍</span>
+              <input id="searchProducts" placeholder="搜索产品名称/SKU…" oninput="renderProducts()">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ 添加产品</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table><thead><tr>
+              <th>产品</th><th>SKU</th><th>库存数量</th><th>库存均价</th><th>库存价值</th><th>状态</th><th>操作</th>
+            </tr></thead><tbody id="productTable"></tbody></table>
+          </div>
+          <div class="pagination" id="productPagination"></div>
+        </div>
+      </div>
+
+      <!-- In Tab -->
+      <div id="tab-in" style="display:none">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <div class="search-box">
+              <span style="color:var(--text-sub)">🔍</span>
+              <input id="searchIn" placeholder="搜索产品名称…" oninput="renderIn()">
+            </div>
+            <button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openTxModal('in')">+ 新增进货</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table><thead><tr>
+              <th>产品</th><th>进货数量</th><th>进货单价</th><th>进货总额</th><th>日期</th><th>备注</th><th>操作</th>
+            </tr></thead><tbody id="inTable"></tbody></table>
+          </div>
+          <div class="pagination" id="inPagination"></div>
+        </div>
+      </div>
+
+      <!-- Out Tab -->
+      <div id="tab-out" style="display:none">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <div class="search-box">
+              <span style="color:var(--text-sub)">🔍</span>
+              <input id="searchOut" placeholder="搜索产品名称…" oninput="renderOut()">
+            </div>
+            <button class="btn btn-primary btn-sm" style="background:var(--red)" onclick="openTxModal('out')">+ 新增出库</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table><thead><tr>
+              <th>产品</th><th>出库数量</th><th>出库单价</th><th>出库总额</th><th>日期</th><th>备注</th><th>操作</th>
+            </tr></thead><tbody id="outTable"></tbody></table>
+          </div>
+          <div class="pagination" id="outPagination"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Product Modal -->
+<div class="overlay" id="productModal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="productModalTitle">添加产品</h2>
+      <button class="modal-close" onclick="closeModal('productModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>产品图片</label>
+        <div class="img-row">
+          <div class="img-preview" id="imgPreview" onclick="document.getElementById('imgUpload').click()">📷
+            <img id="imgPreviewTag" style="display:none">
+          </div>
+          <div class="img-input-wrap">
+            <input type="file" id="imgUpload" accept="image/*" style="display:none" onchange="handleImg(event)">
+            <input type="text" id="imgUrl" placeholder="或粘贴图片URL…" oninput="handleImgUrl()">
+            <div style="margin-top:4px;font-size:11px;color:var(--text-sub)">点击左侧方块上传图片，或粘贴URL</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>产品名称 *</label><input type="text" id="productName" placeholder="输入产品名称"></div>
+        <div class="form-group"><label>SKU / 编码</label><input type="text" id="productSku" placeholder="例如 SKU-001"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>分类</label><input type="text" id="productCategory" placeholder="例如 美妆、原料"></div>
+        <div class="form-group"><label>低库存预警数量</label><input type="number" id="productAlertQty" placeholder="例如 10" min="0"></div>
+      </div>
+      <div class="form-group"><label>备注</label><textarea id="productNote" rows="2" placeholder="产品描述或备注…"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('productModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveProduct()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Transaction Modal -->
+<div class="overlay" id="txModal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="txModalTitle">新增进货</h2>
+      <button class="modal-close" onclick="closeModal('txModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>选择产品 *</label><select id="txProduct"></select></div>
+      <div class="form-row">
+        <div class="form-group"><label id="txQtyLabel">进货数量 *</label><input type="number" id="txQty" placeholder="0" min="1" oninput="calcTxTotal()"></div>
+        <div class="form-group"><label id="txPriceLabel">进货单价 *</label><input type="number" id="txPrice" placeholder="0.00" min="0" step="0.01" oninput="calcTxTotal()"></div>
+      </div>
+      <div class="form-group"><label>合计金额</label><input type="text" id="txTotal" readonly style="background:var(--bg);color:var(--accent);font-weight:600"></div>
+      <div class="form-row">
+        <div class="form-group"><label>日期</label><input type="date" id="txDate"></div>
+        <div class="form-group"><label>备注</label><input type="text" id="txNote" placeholder="可选"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('txModal')">取消</button>
+      <button class="btn btn-primary" id="txSaveBtn" onclick="saveTx()">确认进货</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK (modular v10 via CDN) -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import {
+  getFirestore, collection, doc, setDoc, deleteDoc,
+  onSnapshot, query, orderBy
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ─── Config ──────────────────────────────────────────────────────
+const CFG_KEY = 'erp_firebase_config';
+const LOCAL_KEY = 'erp_db_local';
+
+let firestoreDb = null;
+let localMode = false;
+let unsubProducts = null, unsubTx = null;
+
+// Local in-memory state (rebuilt from Firestore streams OR localStorage)
+let db = { products: [], transactions: [] };
+let currentTab = 'products';
+let currentTxType = 'in';
+let editingProductId = null;
+let currentImgData = '';
+let productPage = 1, inPage = 1, outPage = 1;
+const PAGE_SIZE = 10;
+let activeCategory = 'all';
+
+// ─── Startup ──────────────────────────────────────────────────────
+function startup() {
+  const cfg = loadConfig();
+  if (cfg) {
+    connectFirebase(cfg);
+  } else {
+    showSetupScreen();
+  }
+}
+
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+window.saveConfig = function() {
+  const cfg = {
+    apiKey: document.getElementById('cfg_apiKey').value.trim(),
+    authDomain: document.getElementById('cfg_authDomain').value.trim(),
+    projectId: document.getElementById('cfg_projectId').value.trim(),
+    storageBucket: document.getElementById('cfg_storageBucket').value.trim(),
+    messagingSenderId: document.getElementById('cfg_messagingSenderId').value.trim(),
+    appId: document.getElementById('cfg_appId').value.trim(),
+  };
+  const err = document.getElementById('cfgErr');
+  if (!cfg.apiKey || !cfg.authDomain || !cfg.projectId || !cfg.appId) {
+    err.style.display = 'block'; return;
+  }
+  err.style.display = 'none';
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+  connectFirebase(cfg);
+};
+
+window.useLocalMode = function() {
+  localMode = true;
+  showMainApp();
+  loadLocal();
+};
+
+window.showSetup = function() {
+  document.getElementById('mainApp').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'block';
+  const cfg = loadConfig();
+  if (cfg) {
+    document.getElementById('cfg_apiKey').value = cfg.apiKey || '';
+    document.getElementById('cfg_authDomain').value = cfg.authDomain || '';
+    document.getElementById('cfg_projectId').value = cfg.projectId || '';
+    document.getElementById('cfg_storageBucket').value = cfg.storageBucket || '';
+    document.getElementById('cfg_messagingSenderId').value = cfg.messagingSenderId || '';
+    document.getElementById('cfg_appId').value = cfg.appId || '';
+  }
+};
+
+function showSetupScreen() {
+  document.getElementById('setupScreen').style.display = 'block';
+  document.getElementById('mainApp').style.display = 'none';
+}
+
+function showMainApp() {
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+}
+
+function setSyncStatus(state, text) {
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  dot.className = state; // 'ok' | 'err' | 'loading' | ''
+  label.textContent = text;
+}
+
+// ─── Firebase Connection ──────────────────────────────────────────
+function connectFirebase(cfg) {
+  try {
+    setSyncStatus('loading', '连接中…');
+    const app = initializeApp(cfg);
+    firestoreDb = getFirestore(app);
+    localMode = false;
+    showMainApp();
+    subscribeFirestore();
+  } catch(e) {
+    setSyncStatus('err', '连接失败');
+    toast('Firebase 连接失败：' + e.message);
+    console.error(e);
+  }
+}
+
+function subscribeFirestore() {
+  setSyncStatus('loading', '同步中…');
+  if (unsubProducts) unsubProducts();
+  if (unsubTx) unsubTx();
+
+  const productsRef = collection(firestoreDb, 'products');
+  const txRef = collection(firestoreDb, 'transactions');
+
+  unsubProducts = onSnapshot(productsRef, snap => {
+    db.products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    recalcStocks();
+    render();
+    setSyncStatus('ok', '已同步');
+  }, err => {
+    setSyncStatus('err', '同步错误');
+    console.error('products snapshot error', err);
+  });
+
+  unsubTx = onSnapshot(query(txRef, orderBy('date', 'desc')), snap => {
+    db.transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    recalcStocks();
+    render();
+    setSyncStatus('ok', '已同步');
+  }, err => {
+    setSyncStatus('err', '同步错误');
+    console.error('tx snapshot error', err);
+  });
+}
+
+// ─── Persistence ──────────────────────────────────────────────────
+async function persistProduct(p) {
+  if (localMode) { saveLocal(); return; }
+  try {
+    setSyncStatus('loading', '保存中…');
+    const { id, stock, avgCost, ...data } = p; // don't persist computed fields
+    await setDoc(doc(firestoreDb, 'products', id), data);
+    setSyncStatus('ok', '已同步');
+  } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
+}
+
+async function removeProduct(id) {
+  if (localMode) { saveLocal(); return; }
+  try {
+    await deleteDoc(doc(firestoreDb, 'products', id));
+  } catch(e) { toast('删除失败：' + e.message); }
+}
+
+async function persistTx(t) {
+  if (localMode) { saveLocal(); return; }
+  try {
+    setSyncStatus('loading', '保存中…');
+    const { id, ...data } = t;
+    await setDoc(doc(firestoreDb, 'transactions', id), data);
+    setSyncStatus('ok', '已同步');
+  } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
+}
+
+async function removeTx(id) {
+  if (localMode) { saveLocal(); return; }
+  try {
+    await deleteDoc(doc(firestoreDb, 'transactions', id));
+  } catch(e) { toast('删除失败：' + e.message); }
+}
+
+// ─── Local mode helpers ───────────────────────────────────────────
+function saveLocal() {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(db));
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (raw) db = JSON.parse(raw);
+  } catch {}
+  recalcStocks();
+  render();
+  setSyncStatus('', '本地模式');
+}
+
+// ─── Stock Calculation ────────────────────────────────────────────
+function recalcStocks() {
+  db.products.forEach(p => { p.stock = 0; p.avgCost = 0; });
+  const sorted = [...db.transactions].sort((a,b) => a.date.localeCompare(b.date));
+  const stocks = {};
+  sorted.forEach(tx => {
+    if (!stocks[tx.productId]) stocks[tx.productId] = { qty: 0, totalCost: 0 };
+    const s = stocks[tx.productId];
+    if (tx.type === 'in') {
+      s.totalCost += tx.qty * tx.price;
+      s.qty += tx.qty;
+    } else {
+      const avg = s.qty > 0 ? s.totalCost / s.qty : 0;
+      s.qty = Math.max(0, s.qty - tx.qty);
+      s.totalCost = s.qty * avg;
+    }
+  });
+  db.products.forEach(p => {
+    const s = stocks[p.id];
+    if (s) { p.stock = s.qty; p.avgCost = s.qty > 0 ? s.totalCost / s.qty : 0; }
+  });
+}
+
+// ─── Render ───────────────────────────────────────────────────────
+function render() {
+  renderSummary();
+  renderCategoryChips();
+  renderProducts();
+  renderIn();
+  renderOut();
+}
+
+function renderSummary() {
+  const totalStock = db.products.reduce((a,p) => a + p.stock * p.avgCost, 0);
+  const totalIn = db.transactions.filter(t=>t.type==='in').reduce((a,t)=>a+t.qty*t.price,0);
+  const totalOut = db.transactions.filter(t=>t.type==='out').reduce((a,t)=>a+t.qty*t.price,0);
+  const lowStock = db.products.filter(p => p.alertQty > 0 && p.stock <= p.alertQty).length;
+  document.getElementById('summaryCards').innerHTML = `
+    <div class="stat-card blue"><div class="label">产品种类</div><div class="value">${db.products.length}</div></div>
+    <div class="stat-card amber"><div class="label">库存总价值</div><div class="value">¥${fmt(totalStock)}</div></div>
+    <div class="stat-card green"><div class="label">累计进货金额</div><div class="value">¥${fmt(totalIn)}</div></div>
+    <div class="stat-card red"><div class="label">累计出库金额</div><div class="value">¥${fmt(totalOut)}</div></div>
+    <div class="stat-card ${lowStock>0?'red':''}"><div class="label">低库存预警</div><div class="value">${lowStock} 种</div></div>
+  `;
+}
+
+function fmt(n) { return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+function renderCategoryChips() {
+  const cats = ['all', ...new Set(db.products.map(p=>p.category).filter(Boolean))];
+  document.getElementById('categoryChips').innerHTML = cats.map(c =>
+    `<div class="chip ${activeCategory===c?'active':''}" onclick="setCategory('${c}')">${c==='all'?'全部':c}</div>`
+  ).join('');
+}
+
+window.setCategory = function(c) {
+  activeCategory = c; productPage = 1;
+  renderCategoryChips(); renderProducts();
+};
+
+function renderProducts() {
+  const q = (document.getElementById('searchProducts').value||'').toLowerCase();
+  let list = db.products.filter(p =>
+    (activeCategory === 'all' || p.category === activeCategory) &&
+    (p.name.toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q))
+  );
+  const total = list.length;
+  const pages = Math.ceil(total / PAGE_SIZE) || 1;
+  productPage = Math.min(productPage, pages);
+  list = list.slice((productPage-1)*PAGE_SIZE, productPage*PAGE_SIZE);
+  const tbody = document.getElementById('productTable');
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📦</div>暂无产品</div></td></tr>`;
+  } else {
+    tbody.innerHTML = list.map(p => {
+      const isLow = p.alertQty > 0 && p.stock <= p.alertQty;
+      const imgHtml = p.img
+        ? `<div class="product-img"><img src="${p.img}" alt="" onerror="this.parentNode.textContent='📷'"></div>`
+        : `<div class="product-img">📷</div>`;
+      return `<tr>
+        <td><div class="product-cell">${imgHtml}<div>
+          <div class="product-name">${esc(p.name)}</div>
+          ${p.note?`<div class="product-sku">${esc(p.note)}</div>`:''}
+        </div></div></td>
+        <td><span style="font-size:12px;color:var(--text-sub)">${esc(p.sku||'—')}</span></td>
+        <td><strong>${p.stock}</strong></td>
+        <td>¥${fmt(p.avgCost)}</td>
+        <td>¥${fmt(p.stock * p.avgCost)}</td>
+        <td>${isLow?'<span class="badge badge-low">⚠ 低库存</span>':'<span class="badge badge-stock">正常</span>'}</td>
+        <td><div class="actions-cell">
+          <button class="btn btn-ghost btn-sm" onclick="editProduct('${p.id}')">编辑</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">删除</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+  }
+  renderPagination('productPagination', total, productPage, p => { productPage=p; renderProducts(); });
+}
+
+function renderIn() { renderTxTable('in'); }
+function renderOut() { renderTxTable('out'); }
+
+function renderTxTable(type) {
+  const q = (document.getElementById(type==='in'?'searchIn':'searchOut').value||'').toLowerCase();
+  let list = db.transactions.filter(t => {
+    const p = db.products.find(x=>x.id===t.productId);
+    return t.type === type && (p?.name||'').toLowerCase().includes(q);
+  }).sort((a,b) => b.date.localeCompare(a.date));
+  const total = list.length;
+  let page = type==='in' ? inPage : outPage;
+  const pages = Math.ceil(total/PAGE_SIZE)||1;
+  page = Math.min(page, pages);
+  if (type==='in') inPage=page; else outPage=page;
+  list = list.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
+  const tbody = document.getElementById(type==='in'?'inTable':'outTable');
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">${type==='in'?'📥':'📤'}</div>暂无记录</div></td></tr>`;
+  } else {
+    tbody.innerHTML = list.map(t => {
+      const p = db.products.find(x=>x.id===t.productId);
+      const imgHtml = p?.img
+        ? `<div class="product-img" style="width:32px;height:32px"><img src="${p.img}" alt="" onerror="this.parentNode.textContent='📷'"></div>`
+        : `<div class="product-img" style="width:32px;height:32px">📷</div>`;
+      return `<tr>
+        <td><div class="product-cell">${imgHtml}<span>${esc(p?.name||'已删除')}</span></div></td>
+        <td>${t.qty}</td><td>¥${fmt(t.price)}</td>
+        <td><strong>¥${fmt(t.qty*t.price)}</strong></td>
+        <td>${t.date}</td>
+        <td style="color:var(--text-sub);font-size:12px">${esc(t.note||'—')}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteTx('${t.id}')">删除</button></td>
+      </tr>`;
+    }).join('');
+  }
+  renderPagination(type==='in'?'inPagination':'outPagination', total, page, p => {
+    if(type==='in') inPage=p; else outPage=p; renderTxTable(type);
+  });
+}
+
+function renderPagination(elId, total, page, cb) {
+  const el = document.getElementById(elId);
+  const pages = Math.ceil(total/PAGE_SIZE)||1;
+  if (pages <= 1) { el.innerHTML=''; return; }
+  let html = `<span>共 ${total} 条</span><div class="page-btns">`;
+  html += `<button class="page-btn" ${page<=1?'disabled':''} onclick="(${cb.toString()})(${page-1})">‹</button>`;
+  for (let i=1;i<=pages;i++) html += `<button class="page-btn ${i===page?'active':''}" onclick="(${cb.toString()})(${i})">${i}</button>`;
+  html += `<button class="page-btn" ${page>=pages?'disabled':''} onclick="(${cb.toString()})(${page+1})">›</button></div>`;
+  el.innerHTML = html;
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────
+window.switchTab = function(tab) {
+  currentTab = tab;
+  ['products','in','out'].forEach(t => document.getElementById('tab-'+t).style.display = t===tab?'':'none');
+  document.querySelectorAll('.tab').forEach((el,i) => el.classList.toggle('active', ['products','in','out'][i]===tab));
+};
+
+// ─── Product Modal ─────────────────────────────────────────────────
+window.openProductModal = function(id) {
+  editingProductId = id || null;
+  currentImgData = '';
+  const p = id ? db.products.find(x=>x.id===id) : null;
+  document.getElementById('productModalTitle').textContent = p ? '编辑产品' : '添加产品';
+  document.getElementById('productName').value = p?.name||'';
+  document.getElementById('productSku').value = p?.sku||'';
+  document.getElementById('productCategory').value = p?.category||'';
+  document.getElementById('productAlertQty').value = p?.alertQty||'';
+  document.getElementById('productNote').value = p?.note||'';
+  document.getElementById('imgUrl').value = p?.img||'';
+  currentImgData = p?.img||'';
+  updateImgPreview(p?.img||'');
+  document.getElementById('productModal').style.display = 'flex';
+};
+
+window.editProduct = id => window.openProductModal(id);
+
+window.closeModal = id => document.getElementById(id).style.display = 'none';
+
+window.handleImg = function(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => { currentImgData = ev.target.result; updateImgPreview(currentImgData); document.getElementById('imgUrl').value = ''; };
+  reader.readAsDataURL(file);
+};
+
+window.handleImgUrl = function() {
+  const url = document.getElementById('imgUrl').value.trim();
+  currentImgData = url; updateImgPreview(url);
+};
+
+function updateImgPreview(src) {
+  const wrap = document.getElementById('imgPreview');
+  const img = document.getElementById('imgPreviewTag');
+  if (src) { img.src = src; img.style.display = 'block'; wrap.textContent = ''; wrap.appendChild(img); }
+  else { img.style.display = 'none'; wrap.textContent = '📷'; }
+}
+
+window.saveProduct = async function() {
+  const name = document.getElementById('productName').value.trim();
+  if (!name) { toast('请输入产品名称'); return; }
+  const data = {
+    name,
+    sku: document.getElementById('productSku').value.trim(),
+    category: document.getElementById('productCategory').value.trim(),
+    alertQty: parseInt(document.getElementById('productAlertQty').value)||0,
+    note: document.getElementById('productNote').value.trim(),
+    img: currentImgData,
+  };
+  const id = editingProductId || uid();
+  if (editingProductId) {
+    const idx = db.products.findIndex(p=>p.id===editingProductId);
+    if (idx>=0) Object.assign(db.products[idx], data);
+  } else {
+    db.products.push({ id, stock: 0, avgCost: 0, ...data });
+  }
+  await persistProduct({ id, ...data });
+  if (localMode) { recalcStocks(); render(); }
+  closeModal('productModal');
+  toast(editingProductId ? '产品已更新' : '产品已添加');
+};
+
+window.deleteProduct = async function(id) {
+  if (!confirm('确认删除该产品？')) return;
+  db.products = db.products.filter(p=>p.id!==id);
+  await removeProduct(id);
+  if (localMode) { recalcStocks(); render(); }
+  toast('已删除');
+};
+
+// ─── Transaction Modal ─────────────────────────────────────────────
+window.openTxModal = function(type) {
+  currentTxType = type;
+  document.getElementById('txModalTitle').textContent = type==='in' ? '新增进货' : '新增出库';
+  document.getElementById('txQtyLabel').textContent = type==='in' ? '进货数量 *' : '出库数量 *';
+  document.getElementById('txPriceLabel').textContent = type==='in' ? '进货单价 *' : '出库单价 *';
+  document.getElementById('txSaveBtn').textContent = type==='in' ? '确认进货' : '确认出库';
+  document.getElementById('txSaveBtn').style.background = type==='in' ? 'var(--green)' : 'var(--red)';
+  document.getElementById('txQty').value = '';
+  document.getElementById('txPrice').value = '';
+  document.getElementById('txTotal').value = '';
+  document.getElementById('txNote').value = '';
+  document.getElementById('txDate').value = new Date().toISOString().split('T')[0];
+  const sel = document.getElementById('txProduct');
+  sel.innerHTML = db.products.map(p => `<option value="${p.id}">${esc(p.name)}${p.sku?' ('+p.sku+')':''} — 库存${p.stock}</option>`).join('');
+  document.getElementById('txModal').style.display = 'flex';
+};
+
+window.calcTxTotal = function() {
+  const q = parseFloat(document.getElementById('txQty').value)||0;
+  const p = parseFloat(document.getElementById('txPrice').value)||0;
+  document.getElementById('txTotal').value = q && p ? '¥ ' + fmt(q*p) : '';
+};
+
+window.saveTx = async function() {
+  const productId = document.getElementById('txProduct').value;
+  const qty = parseInt(document.getElementById('txQty').value);
+  const price = parseFloat(document.getElementById('txPrice').value);
+  const date = document.getElementById('txDate').value;
+  if (!productId) { toast('请选择产品'); return; }
+  if (!qty || qty <= 0) { toast('请输入有效数量'); return; }
+  if (!price || price < 0) { toast('请输入有效单价'); return; }
+  if (!date) { toast('请选择日期'); return; }
+  if (currentTxType === 'out') {
+    const p = db.products.find(x=>x.id===productId);
+    if (p && p.stock < qty) { toast(`库存不足！当前库存 ${p.stock}`); return; }
+  }
+  const tx = { id: uid(), type: currentTxType, productId, qty, price, date, note: document.getElementById('txNote').value.trim() };
+  db.transactions.push(tx);
+  await persistTx(tx);
+  if (localMode) { recalcStocks(); render(); }
+  closeModal('txModal');
+  toast(currentTxType==='in' ? '进货记录已添加' : '出库记录已添加');
+};
+
+window.deleteTx = async function(id) {
+  if (!confirm('确认删除该记录？')) return;
+  db.transactions = db.transactions.filter(t=>t.id!==id);
+  await removeTx(id);
+  if (localMode) { recalcStocks(); render(); }
+  toast('已删除');
+};
+
+// ─── Import / Export ──────────────────────────────────────────────
+window.exportData = function() {
+  const exportDb = { products: db.products.map(({stock,avgCost,...p})=>p), transactions: db.transactions };
+  const blob = new Blob([JSON.stringify(exportDb, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `erp_backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  toast('已导出 JSON 文件');
+};
+
+window.importData = async function(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if (!imported.products || !imported.transactions) throw new Error();
+      if (!confirm(`导入 ${imported.products.length} 个产品、${imported.transactions.length} 条记录，将追加到现有数据？`)) return;
+      for (const p of imported.products) {
+        const { stock, avgCost, ...data } = p;
+        if (!db.products.find(x=>x.id===p.id)) {
+          db.products.push({ ...p, stock: 0, avgCost: 0 });
+          await persistProduct(p);
+        }
+      }
+      for (const t of imported.transactions) {
+        if (!db.transactions.find(x=>x.id===t.id)) {
+          db.transactions.push(t);
+          await persistTx(t);
+        }
+      }
+      if (localMode) { recalcStocks(); render(); }
+      toast('导入成功！');
+    } catch { toast('导入失败：文件格式无效'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+};
+
+// ─── Utils ────────────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+window.toast = function(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+};
+
+startup();
+</script>
+</body>
+</html>
