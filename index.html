@@ -188,7 +188,7 @@
 </div>
 
 <!-- ═══ MAIN APP ═══ -->
-<div id="mainApp" style="display:none">
+<div id="mainApp">
   <div class="app">
     <header>
       <h1>📦 进销存 <span>ERP</span></h1>
@@ -198,7 +198,7 @@
         <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ 导出</button>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importFile').click()">⬆ JSON</button>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('xlsxHelpModal').style.display='flex'">📊 Excel</button>
-        <button class="btn btn-ghost btn-sm" onclick="showSetup()">⚙ 配置</button>
+
         <input type="file" id="importFile" accept=".json" style="display:none">
         <input type="file" id="xlsxFile" accept=".xlsx,.xls,.csv" style="display:none">
       </div>
