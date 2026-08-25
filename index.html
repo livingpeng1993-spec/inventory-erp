@@ -147,7 +147,11 @@
   .new-data-banner { display:none;background:var(--accent);color:#fff;font-size:13px;text-align:center;padding:7px;cursor:pointer; }
   .new-data-banner.show { display:block; }
 
-  /* 进出库编辑弹窗复用 txModal，无需额外样式 */
+  /* 批量进出库弹窗 */
+  .tx-row { display:grid; grid-template-columns:1fr 90px 100px 32px; gap:6px; margin-bottom:6px; align-items:center; }
+  .tx-row input, .tx-row select { margin:0; }
+  .tx-row-del { background:none; border:none; color:var(--text-sub); font-size:18px; cursor:pointer; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; }
+  .tx-row-del:hover { color:var(--red); }
 
   /* 时间筛选 */
   .time-filter { display:flex;gap:6px;align-items:center;flex-wrap:wrap; }
@@ -401,29 +405,36 @@
   </div>
 </div>
 
-<!-- Transaction Modal -->
+<!-- 批量进出库弹窗 -->
 <div class="overlay" id="txModal" style="display:none">
-  <div class="modal">
+  <div class="modal" style="max-width:660px">
     <div class="modal-header">
-      <h2 id="txModalTitle">新增进货</h2>
+      <h2 id="txModalTitle">批量进货</h2>
       <button class="modal-close" onclick="closeModal('txModal')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-group"><label>选择产品 *</label><select id="txProduct"></select></div>
-      <div class="form-row">
-        <div class="form-group"><label id="txQtyLabel">进货数量 *</label><input type="number" id="txQty" placeholder="0" min="1" oninput="calcTxTotal()"></div>
-        <div class="form-group"><label id="txPriceLabel">进货单价 *</label><input type="number" id="txPrice" placeholder="0.00" min="0" step="0.01" oninput="calcTxTotal()"></div>
+      <!-- 产品行列表 -->
+      <div style="margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 90px 100px 32px;gap:6px;font-size:11px;color:var(--text-sub);padding:0 2px;margin-bottom:4px">
+          <span>产品 *</span><span id="txQtyLabel">数量 *</span><span id="txPriceLabel">单价 *</span><span></span>
+        </div>
+        <div id="txItemRows"></div>
+        <button class="btn btn-ghost btn-sm" id="txAddRowBtn" style="margin-top:6px;width:100%">+ 添加一行</button>
       </div>
-      <div class="form-group"><label>合计金额</label><input type="text" id="txTotal" readonly style="background:var(--bg);color:var(--accent);font-weight:600"></div>
+      <!-- 合计 -->
+      <div style="text-align:right;font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px">
+        合计：<span id="txGrandTotal">¥0.00</span>
+      </div>
+      <!-- 公共字段 -->
       <div class="form-row">
-        <div class="form-group"><label>日期</label><input type="date" id="txDate"></div>
+        <div class="form-group"><label>日期 *</label><input type="date" id="txDate"></div>
         <div class="form-group"><label>操作人</label><input type="text" id="txOperator" placeholder="填写姓名"></div>
       </div>
-      <div class="form-group"><label>备注</label><input type="text" id="txNote" placeholder="可选"></div>
+      <div class="form-group"><label>备注（整单）</label><input type="text" id="txNote" placeholder="可选"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('txModal')">取消</button>
-      <button class="btn btn-primary" id="txSaveBtn" onclick="saveTx()">确认进货</button>
+      <button class="btn btn-primary" id="txSaveBtn">确认提交</button>
     </div>
   </div>
 </div>
@@ -1215,56 +1226,114 @@ window.deleteProduct = async function(id) {
   toast('已删除');
 };
 
-// ─── Transaction Modal ─────────────────────────────────────────────
+// ─── 批量进出库弹窗 ────────────────────────────────────────────────
+function buildProductOptions(presetId) {
+  return db.products.map(p =>
+    `<option value="${p.id}" ${p.id===presetId?'selected':''}>${esc(p.name)}${p.sku?' ('+p.sku+')':''} — 库存${p.stock}</option>`
+  ).join('');
+}
+
+function addTxRow(presetProductId) {
+  const container = document.getElementById('txItemRows');
+  const row = document.createElement('div');
+  row.className = 'tx-row';
+  row.innerHTML = `
+    <select class="tx-product">${buildProductOptions(presetProductId)}</select>
+    <input type="number" class="tx-qty" placeholder="数量" min="1">
+    <input type="number" class="tx-price" placeholder="单价" min="0" step="0.01">
+    <button class="tx-row-del" title="删除此行">✕</button>`;
+  row.querySelector('.tx-row-del').addEventListener('click', () => {
+    if (container.children.length <= 1) { toast('至少保留一行'); return; }
+    row.remove();
+    calcGrandTotal();
+  });
+  row.querySelector('.tx-qty').addEventListener('input', calcGrandTotal);
+  row.querySelector('.tx-price').addEventListener('input', calcGrandTotal);
+  container.appendChild(row);
+}
+
+function calcGrandTotal() {
+  let total = 0;
+  document.querySelectorAll('#txItemRows .tx-row').forEach(row => {
+    const q = parseFloat(row.querySelector('.tx-qty').value) || 0;
+    const p = parseFloat(row.querySelector('.tx-price').value) || 0;
+    total += q * p;
+  });
+  document.getElementById('txGrandTotal').textContent = '¥' + fmt(total);
+}
+
 window.openTxModal = function(type, presetProductId) {
   currentTxType = type;
-  document.getElementById('txModalTitle').textContent = type==='in' ? '新增进货' : '新增出库';
-  document.getElementById('txQtyLabel').textContent = type==='in' ? '进货数量 *' : '出库数量 *';
-  document.getElementById('txPriceLabel').textContent = type==='in' ? '进货单价 *' : '出库单价 *';
-  document.getElementById('txSaveBtn').textContent = type==='in' ? '确认进货' : '确认出库';
-  document.getElementById('txSaveBtn').style.background = type==='in' ? 'var(--green)' : 'var(--red)';
-  document.getElementById('txQty').value = '';
-  document.getElementById('txPrice').value = '';
-  document.getElementById('txTotal').value = '';
+  const isIn = type === 'in';
+  document.getElementById('txModalTitle').textContent = isIn ? '批量进货' : '批量出库';
+  document.getElementById('txQtyLabel').textContent = isIn ? '数量 *' : '数量 *';
+  document.getElementById('txPriceLabel').textContent = isIn ? '进货单价 *' : '出库单价 *';
+  const saveBtn = document.getElementById('txSaveBtn');
+  saveBtn.textContent = isIn ? '确认进货' : '确认出库';
+  saveBtn.style.background = isIn ? 'var(--green)' : 'var(--red)';
+  // 清空行
+  document.getElementById('txItemRows').innerHTML = '';
+  addTxRow(presetProductId || null);
+  calcGrandTotal();
   document.getElementById('txNote').value = '';
   document.getElementById('txDate').value = new Date().toISOString().split('T')[0];
-  // 恢复上次操作人
   const savedOp = localStorage.getItem(OPERATOR_KEY) || '';
   document.getElementById('txOperator').value = savedOp;
-  const sel = document.getElementById('txProduct');
-  sel.innerHTML = db.products.map(p => `<option value="${p.id}">${esc(p.name)}${p.sku?' ('+p.sku+')':''} — 库存${p.stock}</option>`).join('');
-  if (presetProductId) sel.value = presetProductId;
   document.getElementById('txModal').style.display = 'flex';
 };
 
-window.calcTxTotal = function() {
-  const q = parseFloat(document.getElementById('txQty').value)||0;
-  const p = parseFloat(document.getElementById('txPrice').value)||0;
-  document.getElementById('txTotal').value = q && p ? '¥ ' + fmt(q*p) : '';
-};
+// 保留旧接口兼容
+window.calcTxTotal = calcGrandTotal;
 
 window.saveTx = async function() {
-  const productId = document.getElementById('txProduct').value;
-  const qty = parseInt(document.getElementById('txQty').value);
-  const price = parseFloat(document.getElementById('txPrice').value);
   const date = document.getElementById('txDate').value;
-  if (!productId) { toast('请选择产品'); return; }
-  if (!qty || qty <= 0) { toast('请输入有效数量'); return; }
-  if (!price || price < 0) { toast('请输入有效单价'); return; }
   if (!date) { toast('请选择日期'); return; }
-  if (currentTxType === 'out') {
-    const p = db.products.find(x=>x.id===productId);
-    if (p && p.stock < qty) { toast(`库存不足！当前库存 ${p.stock}`); return; }
-  }
   const operator = document.getElementById('txOperator').value.trim();
-  if (operator) localStorage.setItem(OPERATOR_KEY, operator); // 记住操作人
-  const tx = { id: uid(), type: currentTxType, productId, qty, price, date,
-    note: document.getElementById('txNote').value.trim(), operator };
-  db.transactions.push(tx);
-  await persistTx(tx);
-  if (localMode) { recalcStocks(); render(); }
-  closeModal('txModal');
-  toast(currentTxType==='in' ? '进货记录已添加' : '出库记录已添加');
+  const note = document.getElementById('txNote').value.trim();
+  if (operator) localStorage.setItem(OPERATOR_KEY, operator);
+
+  // 收集所有行
+  const rows = [...document.querySelectorAll('#txItemRows .tx-row')];
+  const items = [];
+  for (const row of rows) {
+    const productId = row.querySelector('.tx-product').value;
+    const qty = parseInt(row.querySelector('.tx-qty').value);
+    const price = parseFloat(row.querySelector('.tx-price').value);
+    if (!productId) { toast('请选择产品'); return; }
+    if (!qty || qty <= 0) { toast('请填写有效数量'); return; }
+    if (isNaN(price) || price < 0) { toast('请填写有效单价'); return; }
+    // 出库检查库存
+    if (currentTxType === 'out') {
+      const p = db.products.find(x => x.id === productId);
+      if (p && p.stock < qty) {
+        toast(`「${p.name}」库存不足！当前库存 ${p.stock}`); return;
+      }
+    }
+    items.push({ productId, qty, price });
+  }
+  if (!items.length) { toast('请至少添加一行'); return; }
+
+  // 逐行保存
+  const saveBtn = document.getElementById('txSaveBtn');
+  saveBtn.disabled = true; saveBtn.textContent = '保存中…';
+  try {
+    for (const item of items) {
+      const tx = {
+        id: uid(), type: currentTxType,
+        productId: item.productId, qty: item.qty, price: item.price,
+        date, note, operator
+      };
+      db.transactions.push(tx);
+      await persistTx(tx);
+    }
+    if (localMode) { recalcStocks(); render(); }
+    closeModal('txModal');
+    toast(`✅ ${currentTxType==='in'?'进货':'出库'}成功，共 ${items.length} 款产品`);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = currentTxType==='in' ? '确认进货' : '确认出库';
+    saveBtn.style.background = currentTxType==='in' ? 'var(--green)' : 'var(--red)';
+  }
 };
 
 window.deleteTx = async function(id) {
@@ -1496,6 +1565,10 @@ function bindEvents() {
   // ⑦ 时间筛选
   document.getElementById('inTimeFilter').onchange = renderIn;
   document.getElementById('outTimeFilter').onchange = renderOut;
+
+  // ⑨ 批量进出库 — 添加行按钮 & 保存按钮
+  document.getElementById('txAddRowBtn').addEventListener('click', () => addTxRow(null));
+  document.getElementById('txSaveBtn').addEventListener('click', () => window.saveTx());
 
   // ⑧ 图片粘贴（Ctrl+V）
   document.addEventListener('paste', e => {
