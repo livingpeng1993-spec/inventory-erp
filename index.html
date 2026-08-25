@@ -135,6 +135,44 @@
   /* 产品图片可点击 */
   .product-img.has-img { cursor: zoom-in; }
 
+  /* 密码锁屏 */
+  .lockscreen { position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center; }
+  .lock-box { background:var(--card);border:1px solid var(--border);border-radius:14px;padding:36px 32px;width:320px;text-align:center; }
+  .lock-box h2 { font-size:16px;font-weight:600;margin-bottom:6px; }
+  .lock-box p { font-size:13px;color:var(--text-sub);margin-bottom:20px; }
+  .lock-box input { margin-bottom:10px; }
+  .lock-err { font-size:12px;color:var(--red);margin-bottom:8px;display:none; }
+
+  /* 新数据提示横幅 */
+  .new-data-banner { display:none;background:var(--accent);color:#fff;font-size:13px;text-align:center;padding:7px;cursor:pointer; }
+  .new-data-banner.show { display:block; }
+
+  /* 进出库编辑弹窗复用 txModal，无需额外样式 */
+
+  /* 时间筛选 */
+  .time-filter { display:flex;gap:6px;align-items:center;flex-wrap:wrap; }
+  .time-filter select { width:auto;font-size:12px;padding:4px 8px; }
+
+  /* 毛利色 */
+  .profit-pos { color:var(--green);font-weight:500; }
+  .profit-neg { color:var(--red);font-weight:500; }
+
+  /* 行内快捷按钮 */
+  .btn-xs { padding:2px 8px;font-size:11px;border-radius:4px; }
+
+  /* 预警 Tab 红点 */
+  .tab-badge { display:inline-block;background:var(--red);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;margin-left:4px;vertical-align:middle; }
+
+  /* 移动端卡片视图 */
+  @media (max-width:640px) {
+    .desktop-only { display:none!important; }
+    .mobile-card-list { display:block; }
+    .mobile-card { background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px; }
+    .mobile-card-row { display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px; }
+    .mobile-card-label { color:var(--text-sub);font-size:12px; }
+  }
+  @media (min-width:641px) { .mobile-card-list { display:none; } }
+
   /* 批量操作栏 */
   .batch-bar { display: none; align-items: center; gap: 10px; padding: 8px 16px; background: var(--accent-light); border-bottom: 1px solid #c5d8f8; flex-wrap: wrap; }
   .batch-bar.show { display: flex; }
@@ -204,6 +242,7 @@
       </div>
     </header>
 
+    <div class="new-data-banner" id="newDataBanner">🔔 有新数据，点击立即刷新</div>
     <main>
       <div class="summary" id="summaryCards"></div>
 
@@ -211,6 +250,7 @@
         <button class="tab active" onclick="switchTab('products')">产品列表</button>
         <button class="tab" onclick="switchTab('in')">进货记录</button>
         <button class="tab" onclick="switchTab('out')">出库记录</button>
+        <button class="tab" onclick="switchTab('alert')" id="alertTab">⚠ 预警</button>
       </div>
 
       <!-- Products Tab -->
@@ -257,11 +297,19 @@
               <span style="color:var(--text-sub)">🔍</span>
               <input id="searchIn" placeholder="搜索产品名称…">
             </div>
-            <button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openTxModal('in')">+ 新增进货</button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="inTimeFilter" class="page-size-select">
+                <option value="all">全部时间</option>
+                <option value="month">本月</option>
+                <option value="quarter">本季度</option>
+                <option value="year">本年</option>
+              </select>
+              <button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openTxModal('in')">+ 新增进货</button>
+            </div>
           </div>
           <div style="overflow-x:auto">
             <table><thead><tr>
-              <th>产品</th><th>进货数量</th><th>进货单价</th><th>进货总额</th><th>日期</th><th>备注</th><th>操作</th>
+              <th>产品</th><th>进货数量</th><th>进货单价</th><th>进货总额</th><th>日期</th><th>操作人</th><th>备注</th><th>操作</th>
             </tr></thead><tbody id="inTable"></tbody></table>
           </div>
           <div class="pagination" id="inPagination"></div>
@@ -276,14 +324,35 @@
               <span style="color:var(--text-sub)">🔍</span>
               <input id="searchOut" placeholder="搜索产品名称…">
             </div>
-            <button class="btn btn-primary btn-sm" style="background:var(--red)" onclick="openTxModal('out')">+ 新增出库</button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="outTimeFilter" class="page-size-select">
+                <option value="all">全部时间</option>
+                <option value="month">本月</option>
+                <option value="quarter">本季度</option>
+                <option value="year">本年</option>
+              </select>
+              <button class="btn btn-primary btn-sm" style="background:var(--red)" onclick="openTxModal('out')">+ 新增出库</button>
+            </div>
           </div>
           <div style="overflow-x:auto">
             <table><thead><tr>
-              <th>产品</th><th>出库数量</th><th>出库单价</th><th>出库总额</th><th>日期</th><th>备注</th><th>操作</th>
+              <th>产品</th><th>出库数量</th><th>出库单价</th><th>出库总额</th><th>毛利</th><th>日期</th><th>操作人</th><th>备注</th><th>操作</th>
             </tr></thead><tbody id="outTable"></tbody></table>
           </div>
           <div class="pagination" id="outPagination"></div>
+        </div>
+      </div>
+      <!-- Alert Tab -->
+      <div id="tab-alert" style="display:none">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <span style="font-size:13px;font-weight:500;color:var(--red)">⚠ 低库存产品列表</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table><thead><tr>
+              <th>产品</th><th>SKU</th><th>当前库存</th><th>预警数量</th><th>库存均价</th><th>操作</th>
+            </tr></thead><tbody id="alertTable"></tbody></table>
+          </div>
         </div>
       </div>
     </main>
@@ -348,12 +417,49 @@
       <div class="form-group"><label>合计金额</label><input type="text" id="txTotal" readonly style="background:var(--bg);color:var(--accent);font-weight:600"></div>
       <div class="form-row">
         <div class="form-group"><label>日期</label><input type="date" id="txDate"></div>
-        <div class="form-group"><label>备注</label><input type="text" id="txNote" placeholder="可选"></div>
+        <div class="form-group"><label>操作人</label><input type="text" id="txOperator" placeholder="填写姓名"></div>
       </div>
+      <div class="form-group"><label>备注</label><input type="text" id="txNote" placeholder="可选"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('txModal')">取消</button>
       <button class="btn btn-primary" id="txSaveBtn" onclick="saveTx()">确认进货</button>
+    </div>
+  </div>
+</div>
+
+<!-- 密码锁屏 -->
+<div class="lockscreen" id="lockscreen">
+  <div class="lock-box">
+    <div style="font-size:36px;margin-bottom:8px">🔒</div>
+    <h2>进销存 ERP</h2>
+    <p>请输入访问密码</p>
+    <input type="password" id="lockInput" placeholder="输入密码" style="margin-bottom:8px">
+    <div class="lock-err" id="lockErr">密码错误，请重试</div>
+    <button class="btn btn-primary" style="width:100%" id="lockBtn">进入</button>
+  </div>
+</div>
+
+<!-- 进出库编辑弹窗 -->
+<div class="overlay" id="editTxModal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="editTxTitle">编辑记录</h2>
+      <button class="modal-close" onclick="closeModal('editTxModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>数量 *</label><input type="number" id="editTxQty" min="1"></div>
+        <div class="form-group"><label>单价 *</label><input type="number" id="editTxPrice" min="0" step="0.01"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>日期</label><input type="date" id="editTxDate"></div>
+        <div class="form-group"><label>备注</label><input type="text" id="editTxNote"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('editTxModal')">取消</button>
+      <button class="btn btn-primary" id="editTxSaveBtn">保存</button>
     </div>
   </div>
 </div>
@@ -443,11 +549,15 @@
 // ─── Config ──────────────────────────────────────────────────────
 const CFG_KEY = 'erp_supabase_config';
 const LOCAL_KEY = 'erp_db_local';
+const PASS_KEY = 'erp_pass_ok';
+const ERP_PASSWORD = 'erp2026';        // ← 访问密码，可修改
+const OPERATOR_KEY = 'erp_operator';   // 记住操作人姓名
 
-let SB_URL = '';   // https://xxxx.supabase.co
-let SB_KEY = '';   // anon key
+let SB_URL = '';
+let SB_KEY = '';
 let localMode = false;
 let pollTimer = null;
+let lastDataHash = '';   // 用于检测新数据
 
 // Local in-memory state (rebuilt from Firestore streams OR localStorage)
 let db = { products: [], transactions: [] };
@@ -465,18 +575,30 @@ const CAT_KEY = 'erp_categories';
 let selectedIds = new Set();
 
 // ─── Startup ──────────────────────────────────────────────────────
-// ── 内置配置（团队共用，无需每人手动填写）────────────────────────
+// ── 内置配置 ──────────────────────────────────────────────────────
 const BUILTIN_URL = 'https://vsnvvdbkcqyejttjrcsv.supabase.co';
 const BUILTIN_KEY = 'sb_publishable_u8X2bsSGTN8IvoC4_MR2wQ_jhBsiulg';
 
 function startup() {
-  // 优先用内置配置，直接连接，无需配置向导
+  // 密码验证
+  if (sessionStorage.getItem(PASS_KEY) !== '1') {
+    document.getElementById('lockscreen').style.display = 'flex';
+    return;
+  }
+  launchApp();
+}
+
+function launchApp() {
+  document.getElementById('lockscreen').style.display = 'none';
   SB_URL = BUILTIN_URL;
   SB_KEY = BUILTIN_KEY;
   localMode = false;
   showMainApp();
   fetchAll();
   startPolling();
+  // 恢复操作人姓名
+  const op = localStorage.getItem(OPERATOR_KEY) || '';
+  if (op) document.getElementById('txOperator').value = op;
 }
 
 function loadConfig() {
@@ -561,15 +683,22 @@ async function sbFetch(path, options = {}) {
 }
 
 // ─── Fetch all data ────────────────────────────────────────────────
-async function fetchAll() {
+async function fetchAll(silent = false) {
   if (localMode) return;
   try {
-    setSyncStatus('loading', '同步中…');
+    if (!silent) setSyncStatus('loading', '同步中…');
     const [products, transactions] = await Promise.all([
       sbFetch('products?select=*&order=created_at.asc'),
-      sbFetch('transactions?select=*&order=date.asc')
+      sbFetch('transactions?select=*&order=date.asc,created_at.asc')
     ]);
-    // 字段映射：数据库 snake_case → JS camelCase
+    const newHash = JSON.stringify(products.length) + JSON.stringify(transactions.length) +
+      (transactions[transactions.length-1]?.id || '');
+    // 检测到新数据且非首次加载
+    if (lastDataHash && newHash !== lastDataHash) {
+      document.getElementById('newDataBanner').classList.add('show');
+    }
+    lastDataHash = newHash;
+
     db.products = products.map(p => ({
       id: p.id, name: p.name, sku: p.sku || '',
       category: p.category || '', alertQty: p.alert_qty || 0,
@@ -579,7 +708,8 @@ async function fetchAll() {
     db.transactions = transactions.map(t => ({
       id: t.id, type: t.type, productId: t.product_id,
       qty: t.qty, price: parseFloat(t.price),
-      date: t.date, note: t.note || ''
+      date: t.date, note: t.note || '',
+      operator: t.operator || ''
     }));
     recalcStocks();
     render();
@@ -590,10 +720,10 @@ async function fetchAll() {
   }
 }
 
-// 轮询（每 10 秒刷新，实现多设备准实时同步）
+// 轮询（每 15 秒后台静默检测新数据）
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(fetchAll, 10000);
+  pollTimer = setInterval(() => fetchAll(true), 15000);
 }
 
 // ─── Persistence ──────────────────────────────────────────────────
@@ -628,7 +758,8 @@ async function persistTx(t) {
     setSyncStatus('loading', '保存中…');
     const row = {
       id: t.id, type: t.type, product_id: t.productId,
-      qty: t.qty, price: t.price, date: t.date, note: t.note || ''
+      qty: t.qty, price: t.price, date: t.date,
+      note: t.note || '', operator: t.operator || ''
     };
     await sbFetch('transactions', {
       method: 'POST',
@@ -690,6 +821,7 @@ function render() {
   renderProducts();
   renderIn();
   renderOut();
+  renderAlert();
   updateCategoryDatalist();
 }
 
@@ -698,11 +830,34 @@ function renderSummary() {
   const totalIn = db.transactions.filter(t=>t.type==='in').reduce((a,t)=>a+t.qty*t.price,0);
   const totalOut = db.transactions.filter(t=>t.type==='out').reduce((a,t)=>a+t.qty*t.price,0);
   const lowStock = db.products.filter(p => p.alertQty > 0 && p.stock <= p.alertQty).length;
+  // 毛利润：每笔出库 (出库单价 - 当时均价) × 数量
+  let totalProfit = 0;
+  const stocks2 = {};
+  [...db.transactions].sort((a,b)=>a.date.localeCompare(b.date)).forEach(t => {
+    if (!stocks2[t.productId]) stocks2[t.productId] = { qty:0, totalCost:0 };
+    const s = stocks2[t.productId];
+    if (t.type==='in') {
+      s.totalCost += t.qty * t.price; s.qty += t.qty;
+    } else {
+      const avg = s.qty > 0 ? s.totalCost/s.qty : 0;
+      totalProfit += (t.price - avg) * t.qty;
+      s.qty = Math.max(0, s.qty - t.qty);
+      s.totalCost = s.qty * avg;
+    }
+  });
+  // 更新预警 Tab 红点
+  const alertTab = document.getElementById('alertTab');
+  if (alertTab) {
+    alertTab.innerHTML = lowStock > 0
+      ? `⚠ 预警<span class="tab-badge">${lowStock}</span>`
+      : '⚠ 预警';
+  }
   document.getElementById('summaryCards').innerHTML = `
     <div class="stat-card blue"><div class="label">产品种类</div><div class="value">${db.products.length}</div></div>
     <div class="stat-card amber"><div class="label">库存总价值</div><div class="value">¥${fmt(totalStock)}</div></div>
     <div class="stat-card green"><div class="label">累计进货金额</div><div class="value">¥${fmt(totalIn)}</div></div>
     <div class="stat-card red"><div class="label">累计出库金额</div><div class="value">¥${fmt(totalOut)}</div></div>
+    <div class="stat-card ${totalProfit>=0?'green':'red'}"><div class="label">累计毛利润</div><div class="value">¥${fmt(totalProfit)}</div></div>
     <div class="stat-card ${lowStock>0?'red':''}"><div class="label">低库存预警</div><div class="value">${lowStock} 种</div></div>
   `;
 }
@@ -729,7 +884,7 @@ function renderProducts() {
   const q = (document.getElementById('searchProducts').value||'').toLowerCase();
   let list = db.products.filter(p =>
     (activeCategory === 'all' || p.category === activeCategory) &&
-    (p.name.toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q))
+    (p.name.toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q) || (p.note||'').toLowerCase().includes(q))
   );
   const total = list.length;
   const pages = Math.ceil(total / PAGE_SIZE) || 1;
@@ -778,6 +933,14 @@ function renderProducts() {
       cell.appendChild(imgDiv); cell.appendChild(nameDiv);
 
       // ── 操作按钮
+      const inBtn = document.createElement('button');
+      inBtn.className = 'btn btn-sm'; inBtn.textContent = '入库';
+      inBtn.style.cssText = 'background:var(--green-light);color:var(--green);border:1px solid #a8dfc1';
+      inBtn.addEventListener('click', () => openTxModal('in', p.id));
+      const outBtn = document.createElement('button');
+      outBtn.className = 'btn btn-sm'; outBtn.textContent = '出库';
+      outBtn.style.cssText = 'background:var(--red-light);color:var(--red);border:1px solid #f5c0c0';
+      outBtn.addEventListener('click', () => openTxModal('out', p.id));
       const editBtn = document.createElement('button');
       editBtn.className = 'btn btn-ghost btn-sm'; editBtn.textContent = '编辑';
       editBtn.addEventListener('click', () => openProductModal(p.id));
@@ -786,6 +949,7 @@ function renderProducts() {
       delBtn.addEventListener('click', () => deleteProduct(p.id));
       const actDiv = document.createElement('div');
       actDiv.className = 'actions-cell';
+      actDiv.appendChild(inBtn); actDiv.appendChild(outBtn);
       actDiv.appendChild(editBtn); actDiv.appendChild(delBtn);
 
       // ── 其余列
@@ -817,11 +981,31 @@ function renderProducts() {
 function renderIn() { renderTxTable('in'); }
 function renderOut() { renderTxTable('out'); }
 
+function getTimeFilter(type) {
+  const sel = document.getElementById(type==='in'?'inTimeFilter':'outTimeFilter');
+  return sel ? sel.value : 'all';
+}
+
+function inTimeRange(date, filter) {
+  if (filter === 'all') return true;
+  const d = new Date(date), now = new Date();
+  if (filter === 'month') return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+  if (filter === 'quarter') {
+    const q = Math.floor(now.getMonth()/3);
+    return d.getFullYear()===now.getFullYear() && Math.floor(d.getMonth()/3)===q;
+  }
+  if (filter === 'year') return d.getFullYear()===now.getFullYear();
+  return true;
+}
+
 function renderTxTable(type) {
   const q = (document.getElementById(type==='in'?'searchIn':'searchOut').value||'').toLowerCase();
+  const timeFilter = getTimeFilter(type);
   let list = db.transactions.filter(t => {
     const p = db.products.find(x=>x.id===t.productId);
-    return t.type === type && (p?.name||'').toLowerCase().includes(q);
+    return t.type === type &&
+      ((p?.name||'').toLowerCase().includes(q) || (t.note||'').toLowerCase().includes(q)) &&
+      inTimeRange(t.date, timeFilter);
   }).sort((a,b) => b.date.localeCompare(a.date));
   const total = list.length;
   let page = type==='in' ? inPage : outPage;
@@ -854,18 +1038,48 @@ function renderTxTable(type) {
       cell.className = 'product-cell';
       cell.appendChild(imgDiv); cell.appendChild(nameSpan);
       // 删除按钮
+      // 毛利计算
+      const prod = db.products.find(x=>x.id===t.productId);
+      const avgCost = prod?.avgCost || 0;
+      const profit = type==='out' ? (t.price - avgCost) * t.qty : null;
+      const profitHtml = profit !== null
+        ? `<span class="${profit>=0?'profit-pos':'profit-neg'}">¥${fmt(profit)}</span>`
+        : '';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm'; editBtn.textContent = '编辑';
+      editBtn.addEventListener('click', () => openEditTxModal(t));
       const delBtn = document.createElement('button');
       delBtn.className = 'btn btn-danger btn-sm'; delBtn.textContent = '删除';
       delBtn.addEventListener('click', () => deleteTx(t.id));
-      tr.innerHTML = `
-        <td></td>
-        <td>${t.qty}</td><td>¥${fmt(t.price)}</td>
-        <td><strong>¥${fmt(t.qty*t.price)}</strong></td>
-        <td>${t.date}</td>
-        <td style="color:var(--text-sub);font-size:12px">${esc(t.note||'—')}</td>
-        <td></td>`;
-      tr.cells[0].appendChild(cell);
-      tr.cells[6].appendChild(delBtn);
+      const actDiv = document.createElement('div');
+      actDiv.className = 'actions-cell';
+      actDiv.appendChild(editBtn); actDiv.appendChild(delBtn);
+
+      if (type === 'in') {
+        tr.innerHTML = `
+          <td></td>
+          <td>${t.qty}</td><td>¥${fmt(t.price)}</td>
+          <td><strong>¥${fmt(t.qty*t.price)}</strong></td>
+          <td>${t.date}</td>
+          <td style="font-size:12px;color:var(--text-sub)">${esc(t.operator||'—')}</td>
+          <td style="color:var(--text-sub);font-size:12px">${esc(t.note||'—')}</td>
+          <td></td>`;
+        tr.cells[0].appendChild(cell);
+        tr.cells[7].appendChild(actDiv);
+      } else {
+        tr.innerHTML = `
+          <td></td>
+          <td>${t.qty}</td><td>¥${fmt(t.price)}</td>
+          <td><strong>¥${fmt(t.qty*t.price)}</strong></td>
+          <td>${profitHtml}</td>
+          <td>${t.date}</td>
+          <td style="font-size:12px;color:var(--text-sub)">${esc(t.operator||'—')}</td>
+          <td style="color:var(--text-sub);font-size:12px">${esc(t.note||'—')}</td>
+          <td></td>`;
+        tr.cells[0].appendChild(cell);
+        tr.cells[8].appendChild(actDiv);
+      }
       tbody.appendChild(tr);
     });
   }
@@ -910,8 +1124,11 @@ function renderPagination(elId, total, page, cb) {
 // ─── Tabs ─────────────────────────────────────────────────────────
 window.switchTab = function(tab) {
   currentTab = tab;
-  ['products','in','out'].forEach(t => document.getElementById('tab-'+t).style.display = t===tab?'':'none');
-  document.querySelectorAll('.tab').forEach((el,i) => el.classList.toggle('active', ['products','in','out'][i]===tab));
+  ['products','in','out','alert'].forEach(t => document.getElementById('tab-'+t).style.display = t===tab?'':'none');
+  document.querySelectorAll('.tab').forEach(el => {
+    const t = el.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
+    el.classList.toggle('active', t===tab);
+  });
 };
 
 // ─── Product Modal ─────────────────────────────────────────────────
@@ -958,9 +1175,15 @@ function updateImgPreview(src) {
 window.saveProduct = async function() {
   const name = document.getElementById('productName').value.trim();
   if (!name) { toast('请输入产品名称'); return; }
+  const sku = document.getElementById('productSku').value.trim();
+  // 重复检测
+  const dup = db.products.find(p => p.id !== editingProductId &&
+    (p.name === name || (sku && p.sku && p.sku === sku)));
+  if (dup) {
+    toast(`⚠ 已存在同名/同SKU产品：${dup.name}`); return;
+  }
   const data = {
-    name,
-    sku: document.getElementById('productSku').value.trim(),
+    name, sku,
     category: document.getElementById('productCategory').value.trim(),
     alertQty: parseInt(document.getElementById('productAlertQty').value)||0,
     note: document.getElementById('productNote').value.trim(),
@@ -980,7 +1203,12 @@ window.saveProduct = async function() {
 };
 
 window.deleteProduct = async function(id) {
-  if (!confirm('确认删除该产品？')) return;
+  const hasTx = db.transactions.some(t => t.productId === id);
+  if (hasTx) {
+    if (!confirm('该产品有进出库记录，删除产品不会删除记录，确认继续？')) return;
+  } else {
+    if (!confirm('确认删除该产品？')) return;
+  }
   db.products = db.products.filter(p=>p.id!==id);
   await removeProduct(id);
   if (localMode) { recalcStocks(); render(); }
@@ -988,7 +1216,7 @@ window.deleteProduct = async function(id) {
 };
 
 // ─── Transaction Modal ─────────────────────────────────────────────
-window.openTxModal = function(type) {
+window.openTxModal = function(type, presetProductId) {
   currentTxType = type;
   document.getElementById('txModalTitle').textContent = type==='in' ? '新增进货' : '新增出库';
   document.getElementById('txQtyLabel').textContent = type==='in' ? '进货数量 *' : '出库数量 *';
@@ -1000,8 +1228,12 @@ window.openTxModal = function(type) {
   document.getElementById('txTotal').value = '';
   document.getElementById('txNote').value = '';
   document.getElementById('txDate').value = new Date().toISOString().split('T')[0];
+  // 恢复上次操作人
+  const savedOp = localStorage.getItem(OPERATOR_KEY) || '';
+  document.getElementById('txOperator').value = savedOp;
   const sel = document.getElementById('txProduct');
   sel.innerHTML = db.products.map(p => `<option value="${p.id}">${esc(p.name)}${p.sku?' ('+p.sku+')':''} — 库存${p.stock}</option>`).join('');
+  if (presetProductId) sel.value = presetProductId;
   document.getElementById('txModal').style.display = 'flex';
 };
 
@@ -1024,7 +1256,10 @@ window.saveTx = async function() {
     const p = db.products.find(x=>x.id===productId);
     if (p && p.stock < qty) { toast(`库存不足！当前库存 ${p.stock}`); return; }
   }
-  const tx = { id: uid(), type: currentTxType, productId, qty, price, date, note: document.getElementById('txNote').value.trim() };
+  const operator = document.getElementById('txOperator').value.trim();
+  if (operator) localStorage.setItem(OPERATOR_KEY, operator); // 记住操作人
+  const tx = { id: uid(), type: currentTxType, productId, qty, price, date,
+    note: document.getElementById('txNote').value.trim(), operator };
   db.transactions.push(tx);
   await persistTx(tx);
   if (localMode) { recalcStocks(); render(); }
@@ -1237,6 +1472,67 @@ function bindEvents() {
   });
   document.getElementById('catAddBtn').onclick = addCategory;
 
+  // ⑤ 密码锁
+  const lockBtn = document.getElementById('lockBtn');
+  const lockInput = document.getElementById('lockInput');
+  const doLogin = () => {
+    if (lockInput.value === ERP_PASSWORD) {
+      sessionStorage.setItem(PASS_KEY, '1');
+      launchApp();
+    } else {
+      document.getElementById('lockErr').style.display = 'block';
+      lockInput.value = ''; lockInput.focus();
+    }
+  };
+  lockBtn.addEventListener('click', doLogin);
+  lockInput.addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+
+  // ⑥ 新数据横幅点击刷新
+  document.getElementById('newDataBanner').addEventListener('click', () => {
+    document.getElementById('newDataBanner').classList.remove('show');
+    fetchAll();
+  });
+
+  // ⑦ 时间筛选
+  document.getElementById('inTimeFilter').onchange = renderIn;
+  document.getElementById('outTimeFilter').onchange = renderOut;
+
+  // ⑧ 图片粘贴（Ctrl+V）
+  document.addEventListener('paste', e => {
+    const modal = document.getElementById('productModal');
+    if (modal.style.display === 'none') return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX_PX = 400;
+            let w = img.width, h = img.height;
+            if (w > MAX_PX || h > MAX_PX) {
+              const r = Math.min(MAX_PX/w, MAX_PX/h);
+              w = Math.round(w*r); h = Math.round(h*r);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            let data = canvas.toDataURL('image/jpeg', 0.75);
+            if (data.length > 200000) data = canvas.toDataURL('image/jpeg', 0.4);
+            currentImgData = data;
+            updateImgPreview(data);
+            toast('✅ 图片已从剪贴板粘贴');
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  });
+
   // ④ 批量操作
   // 全选框
   document.getElementById('checkAll').addEventListener('change', function() {
@@ -1285,6 +1581,70 @@ function handleImgFile(e) {
     imgEl.src = ev.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+// ─── 预警 Tab ─────────────────────────────────────────────────────
+function renderAlert() {
+  const list = db.products.filter(p => p.alertQty > 0 && p.stock <= p.alertQty);
+  const tbody = document.getElementById('alertTable');
+  tbody.innerHTML = '';
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">✅</div>暂无低库存产品</div></td></tr>`;
+    return;
+  }
+  list.forEach(p => {
+    const tr = document.createElement('tr');
+    const imgDiv = document.createElement('div');
+    imgDiv.className = 'product-img' + (p.img?' has-img':'');
+    if (p.img) {
+      const im = document.createElement('img'); im.src=p.img; im.alt='';
+      im.onerror = () => { imgDiv.textContent='📷'; };
+      imgDiv.appendChild(im);
+      imgDiv.addEventListener('click', () => openLightbox(p.img));
+    } else imgDiv.textContent = '📷';
+    const nameDiv = document.createElement('div');
+    nameDiv.innerHTML = `<div class="product-name">${esc(p.name)}</div>`;
+    const cell = document.createElement('div'); cell.className='product-cell';
+    cell.appendChild(imgDiv); cell.appendChild(nameDiv);
+    const inBtn = document.createElement('button');
+    inBtn.className='btn btn-sm'; inBtn.textContent='立即入库';
+    inBtn.style.cssText='background:var(--green-light);color:var(--green);border:1px solid #a8dfc1';
+    inBtn.addEventListener('click', () => { openTxModal('in', p.id); switchTab('in'); });
+    tr.innerHTML = `<td></td><td style="font-size:12px;color:var(--text-sub)">${esc(p.sku||'—')}</td>
+      <td><strong style="color:var(--red)">${p.stock}</strong></td>
+      <td>${p.alertQty}</td><td>¥${fmt(p.avgCost)}</td><td></td>`;
+    tr.cells[0].appendChild(cell);
+    tr.cells[5].appendChild(inBtn);
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── 编辑进出库记录 ───────────────────────────────────────────────
+let editingTxId = null;
+function openEditTxModal(t) {
+  editingTxId = t.id;
+  const type = t.type === 'in' ? '进货' : '出库';
+  document.getElementById('editTxTitle').textContent = `编辑${type}记录`;
+  document.getElementById('editTxQty').value = t.qty;
+  document.getElementById('editTxPrice').value = t.price;
+  document.getElementById('editTxDate').value = t.date;
+  document.getElementById('editTxNote').value = t.note || '';
+  document.getElementById('editTxModal').style.display = 'flex';
+  document.getElementById('editTxSaveBtn').onclick = async () => {
+    const qty = parseInt(document.getElementById('editTxQty').value);
+    const price = parseFloat(document.getElementById('editTxPrice').value);
+    const date = document.getElementById('editTxDate').value;
+    if (!qty||qty<=0||!price||price<0||!date) { toast('请填写完整'); return; }
+    const idx = db.transactions.findIndex(x=>x.id===editingTxId);
+    if (idx>=0) {
+      db.transactions[idx] = { ...db.transactions[idx], qty, price, date,
+        note: document.getElementById('editTxNote').value.trim() };
+      await persistTx(db.transactions[idx]);
+      if (localMode) { recalcStocks(); render(); }
+    }
+    closeModal('editTxModal');
+    toast('记录已更新');
+  };
 }
 
 // ─── 批量编辑分类 ─────────────────────────────────────────────────
