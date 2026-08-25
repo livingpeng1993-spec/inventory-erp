@@ -374,6 +374,7 @@
           <tr><td style="padding:5px 10px;border:1px solid var(--border)">SKU / sku</td><td style="padding:5px 10px;border:1px solid var(--border)">产品编码</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
           <tr><td style="padding:5px 10px;border:1px solid var(--border)">分类 / category</td><td style="padding:5px 10px;border:1px solid var(--border)">产品分类</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
           <tr><td style="padding:5px 10px;border:1px solid var(--border)">预警数量 / alertqty</td><td style="padding:5px 10px;border:1px solid var(--border)">低库存预警</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">图片 / image</td><td style="padding:5px 10px;border:1px solid var(--border)">产品图片URL（公开图片链接）</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
           <tr><td style="padding:5px 10px;border:1px solid var(--border)">备注 / note</td><td style="padding:5px 10px;border:1px solid var(--border)">备注</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
         </table>
       </div>
@@ -775,38 +776,7 @@ window.editProduct = id => window.openProductModal(id);
 
 window.closeModal = id => document.getElementById(id).style.display = 'none';
 
-window.handleImg = function(e) {
-  const file = e.target.files[0]; if (!file) return;
-  // 压缩图片到 200KB 以内，避免超 Firestore 文档 1MB 限制
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const img = new Image();
-    img.onload = () => {
-      const MAX_PX = 400; // 最大边长 400px，足够缩略图显示
-      let w = img.width, h = img.height;
-      if (w > MAX_PX || h > MAX_PX) {
-        const ratio = Math.min(MAX_PX/w, MAX_PX/h);
-        w = Math.round(w * ratio); h = Math.round(h * ratio);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      // 尝试 quality 0.7，若仍 > 200KB 则降到 0.4
-      let data = canvas.toDataURL('image/jpeg', 0.7);
-      if (data.length > 200000) data = canvas.toDataURL('image/jpeg', 0.4);
-      currentImgData = data;
-      updateImgPreview(data);
-      document.getElementById('imgUrl').value = '';
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-};
 
-window.handleImgUrl = function() {
-  const url = document.getElementById('imgUrl').value.trim();
-  currentImgData = url; updateImgPreview(url);
-};
 
 function updateImgPreview(src) {
   const wrap = document.getElementById('imgPreview');
@@ -980,7 +950,8 @@ window.importExcel = async function(e) {
             category: String(r['分类'] || r['category'] || '').trim(),
             alertQty: parseInt(r['预警数量'] || r['alertqty'] || r['alert'] || 0) || 0,
             note: String(r['备注'] || r['note'] || '').trim(),
-            img: '', stock: 0, avgCost: 0,
+            img: String(r['图片'] || r['图片url'] || r['image'] || r['img'] || r['imageurl'] || '').trim(),
+            stock: 0, avgCost: 0,
           };
           db.products.push(p);
           await persistProduct(p);
@@ -1045,33 +1016,66 @@ window.toast = function(msg) {
   setTimeout(() => el.remove(), 2800);
 };
 
-// ─── Bind DOM events (module scope safe) ─────────────────────────
-// All onclick="fn()" in HTML go to window.fn, but file input & imgUrl
-// are inside module — bind them here to avoid "fn is not defined" errors.
-document.addEventListener('DOMContentLoaded', () => {
-  // Image upload
+// ─── Bind DOM events ──────────────────────────────────────────────
+// module scripts are deferred — DOM is always ready here, no need for DOMContentLoaded
+function bindEvents() {
+  // Image upload file input
   const imgUpload = document.getElementById('imgUpload');
-  if (imgUpload) imgUpload.addEventListener('change', e => window.handleImg(e));
-
-  // Image URL input
+  if (imgUpload) {
+    imgUpload.onchange = e => handleImgFile(e);
+  }
+  // Image URL text input
   const imgUrlInput = document.getElementById('imgUrl');
-  if (imgUrlInput) imgUrlInput.addEventListener('input', () => window.handleImgUrl());
-
+  if (imgUrlInput) {
+    imgUrlInput.oninput = () => {
+      const url = imgUrlInput.value.trim();
+      currentImgData = url;
+      updateImgPreview(url);
+    };
+  }
+  // imgPreview click → trigger file input
+  const imgPreview = document.getElementById('imgPreview');
+  if (imgPreview) {
+    imgPreview.onclick = () => document.getElementById('imgUpload').click();
+  }
   // Search boxes
-  document.getElementById('searchProducts')?.addEventListener('input', renderProducts);
-  document.getElementById('searchIn')?.addEventListener('input', renderIn);
-  document.getElementById('searchOut')?.addEventListener('input', renderOut);
+  document.getElementById('searchProducts').oninput = renderProducts;
+  document.getElementById('searchIn').oninput = renderIn;
+  document.getElementById('searchOut').oninput = renderOut;
+  // File imports
+  document.getElementById('xlsxFile').onchange = e => importExcel(e);
+  document.getElementById('importFile').onchange = e => importData(e);
+}
 
-  // Excel file input
-  const xlsxFile = document.getElementById('xlsxFile');
-  if (xlsxFile) xlsxFile.addEventListener('change', e => window.importExcel(e));
-
-  // JSON import file input
-  const importFile = document.getElementById('importFile');
-  if (importFile) importFile.addEventListener('change', e => window.importData(e));
-});
+function handleImgFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const imgEl = new Image();
+    imgEl.onload = () => {
+      const MAX_PX = 400;
+      let w = imgEl.width, h = imgEl.height;
+      if (w > MAX_PX || h > MAX_PX) {
+        const ratio = Math.min(MAX_PX / w, MAX_PX / h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+      let data = canvas.toDataURL('image/jpeg', 0.75);
+      if (data.length > 200000) data = canvas.toDataURL('image/jpeg', 0.4);
+      currentImgData = data;
+      updateImgPreview(data);
+      document.getElementById('imgUrl').value = '';
+    };
+    imgEl.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
 
 startup();
+bindEvents();
 </script>
 </body>
 </html>
