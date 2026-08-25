@@ -161,70 +161,26 @@
 </head>
 <body>
 
-<!-- ═══ SETUP WIZARD (shown when no Firebase config) ═══ -->
+<!-- ═══ SETUP WIZARD ═══ -->
 <div id="setupScreen" style="display:none; padding: 20px;">
   <div class="setup-box">
-    <h2>🔥 连接 Firebase 实现多设备同步</h2>
-    <p>只需 3 步，所有团队成员打开同一个 HTML 文件就能实时共享数据。完全免费（Spark 套餐足够日常使用）。</p>
-
+    <h2>☁️ 连接 Supabase 实现多设备同步</h2>
+    <p>国内直连，无需 VPN。每台设备首次打开填写一次配置，之后自动同步。</p>
     <div class="info-box">
-      💡 配置信息保存在本地浏览器，每台设备首次打开需要填写一次。之后直接使用，数据实时同步。
+      💡 配置信息仅保存在本地浏览器，不会上传。团队每位成员各自填写一次即可。
     </div>
-
-    <div class="setup-steps">
-      <div class="setup-step">
-        <div class="setup-step-num"></div>
-        <div class="setup-step-text">
-          打开 <a href="https://console.firebase.google.com/" target="_blank">Firebase Console</a>，
-          点击「Add project」→ 输入项目名（如 <code>erp-inventory</code>）→ 创建完成后点击「Web」图标 (&lt;/&gt;) 注册应用。
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="setup-step-num"></div>
-        <div class="setup-step-text">
-          在左侧菜单 「Build」→「Firestore Database」→「Create database」→ 选 <code>Start in test mode</code>（方便测试，30天后需调规则）→ 选择最近的区域。
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="setup-step-num"></div>
-        <div class="setup-step-text">
-          回到「Project settings」→「Your apps」→ 复制 <code>firebaseConfig</code> 里的各字段，粘贴到下方。
-        </div>
-      </div>
-    </div>
-
-    <div class="config-area">
-      <div class="form-row">
-        <div class="form-group">
-          <label>API Key *</label>
-          <input id="cfg_apiKey" placeholder="AIzaSy...">
-        </div>
-        <div class="form-group">
-          <label>Auth Domain *</label>
-          <input id="cfg_authDomain" placeholder="xxx.firebaseapp.com">
-        </div>
+    <div class="config-area" style="border-top:none;padding-top:0">
+      <div class="form-group">
+        <label>Supabase Project URL *</label>
+        <input id="cfg_url" placeholder="https://xxxx.supabase.co">
       </div>
       <div class="form-group">
-        <label>Project ID *</label>
-        <input id="cfg_projectId" placeholder="erp-inventory-xxxxx">
+        <label>Supabase Anon Key *</label>
+        <input id="cfg_key" placeholder="eyJ...">
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Storage Bucket</label>
-          <input id="cfg_storageBucket" placeholder="xxx.appspot.com">
-        </div>
-        <div class="form-group">
-          <label>Messaging Sender ID</label>
-          <input id="cfg_messagingSenderId" placeholder="123456789">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>App ID *</label>
-        <input id="cfg_appId" placeholder="1:123:web:abc...">
-      </div>
-      <div id="cfgErr" class="err-tip">请填写 API Key、Auth Domain、Project ID 和 App ID</div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-primary" onclick="saveConfig()">连接 Firebase</button>
+      <div id="cfgErr" class="err-tip">请填写 URL 和 Key</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary" onclick="saveConfig()">连接 Supabase</button>
         <button class="btn btn-ghost" onclick="useLocalMode()">暂时用本地模式</button>
       </div>
     </div>
@@ -483,21 +439,15 @@
   </div>
 </div>
 
-<!-- Firebase SDK (modular v10 via CDN) -->
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import {
-  getFirestore, collection, doc, setDoc, deleteDoc,
-  onSnapshot, query, orderBy
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-
 // ─── Config ──────────────────────────────────────────────────────
-const CFG_KEY = 'erp_firebase_config';
+const CFG_KEY = 'erp_supabase_config';
 const LOCAL_KEY = 'erp_db_local';
 
-let firestoreDb = null;
+let SB_URL = '';   // https://xxxx.supabase.co
+let SB_KEY = '';   // anon key
 let localMode = false;
-let unsubProducts = null, unsubTx = null;
+let pollTimer = null;
 
 // Local in-memory state (rebuilt from Firestore streams OR localStorage)
 let db = { products: [], transactions: [] };
@@ -515,42 +465,47 @@ const CAT_KEY = 'erp_categories';
 let selectedIds = new Set();
 
 // ─── Startup ──────────────────────────────────────────────────────
+// ── 内置配置（团队共用，无需每人手动填写）────────────────────────
+const BUILTIN_URL = 'https://vsnvvdbkcqyejttjrcsv.supabase.co';
+const BUILTIN_KEY = 'sb_publishable_u8X2bsSGTN8IvoC4_MR2wQ_jhBsiulg';
+
 function startup() {
-  const cfg = loadConfig();
-  if (cfg) {
-    connectFirebase(cfg);
-  } else {
-    showSetupScreen();
-  }
+  // 优先用内置配置，直接连接，无需配置向导
+  SB_URL = BUILTIN_URL;
+  SB_KEY = BUILTIN_KEY;
+  localMode = false;
+  showMainApp();
+  fetchAll();
+  startPolling();
 }
 
 function loadConfig() {
   try {
     const raw = localStorage.getItem(CFG_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const cfg = JSON.parse(raw);
+    return (cfg.url && cfg.key) ? cfg : null;
   } catch { return null; }
 }
 
 window.saveConfig = function() {
-  const cfg = {
-    apiKey: document.getElementById('cfg_apiKey').value.trim(),
-    authDomain: document.getElementById('cfg_authDomain').value.trim(),
-    projectId: document.getElementById('cfg_projectId').value.trim(),
-    storageBucket: document.getElementById('cfg_storageBucket').value.trim(),
-    messagingSenderId: document.getElementById('cfg_messagingSenderId').value.trim(),
-    appId: document.getElementById('cfg_appId').value.trim(),
-  };
+  const url = document.getElementById('cfg_url').value.trim();
+  const key = document.getElementById('cfg_key').value.trim();
   const err = document.getElementById('cfgErr');
-  if (!cfg.apiKey || !cfg.authDomain || !cfg.projectId || !cfg.appId) {
-    err.style.display = 'block'; return;
-  }
+  if (!url || !key) { err.style.display = 'block'; return; }
   err.style.display = 'none';
-  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-  connectFirebase(cfg);
+  localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
+  SB_URL = url.replace(/\/$/, '');
+  SB_KEY = key;
+  localMode = false;
+  showMainApp();
+  fetchAll();
+  startPolling();
 };
 
 window.useLocalMode = function() {
   localMode = true;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   showMainApp();
   loadLocal();
 };
@@ -560,12 +515,8 @@ window.showSetup = function() {
   document.getElementById('setupScreen').style.display = 'block';
   const cfg = loadConfig();
   if (cfg) {
-    document.getElementById('cfg_apiKey').value = cfg.apiKey || '';
-    document.getElementById('cfg_authDomain').value = cfg.authDomain || '';
-    document.getElementById('cfg_projectId').value = cfg.projectId || '';
-    document.getElementById('cfg_storageBucket').value = cfg.storageBucket || '';
-    document.getElementById('cfg_messagingSenderId').value = cfg.messagingSenderId || '';
-    document.getElementById('cfg_appId').value = cfg.appId || '';
+    document.getElementById('cfg_url').value = cfg.url || '';
+    document.getElementById('cfg_key').value = cfg.key || '';
   }
 };
 
@@ -582,53 +533,67 @@ function showMainApp() {
 function setSyncStatus(state, text) {
   const dot = document.getElementById('syncDot');
   const label = document.getElementById('syncLabel');
-  dot.className = state; // 'ok' | 'err' | 'loading' | ''
+  dot.className = state;
   label.textContent = text;
 }
 
-// ─── Firebase Connection ──────────────────────────────────────────
-function connectFirebase(cfg) {
+// ─── Supabase REST helpers ─────────────────────────────────────────
+function sbHeaders() {
+  return {
+    'apikey': SB_KEY,
+    'Authorization': 'Bearer ' + SB_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+  };
+}
+
+async function sbFetch(path, options = {}) {
+  const res = await fetch(SB_URL + '/rest/v1/' + path, {
+    ...options,
+    headers: { ...sbHeaders(), ...(options.headers || {}) }
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`${res.status} ${txt}`);
+  }
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('json') ? res.json() : null;
+}
+
+// ─── Fetch all data ────────────────────────────────────────────────
+async function fetchAll() {
+  if (localMode) return;
   try {
-    setSyncStatus('loading', '连接中…');
-    const app = initializeApp(cfg);
-    firestoreDb = getFirestore(app);
-    localMode = false;
-    showMainApp();
-    subscribeFirestore();
+    setSyncStatus('loading', '同步中…');
+    const [products, transactions] = await Promise.all([
+      sbFetch('products?select=*&order=created_at.asc'),
+      sbFetch('transactions?select=*&order=date.asc')
+    ]);
+    // 字段映射：数据库 snake_case → JS camelCase
+    db.products = products.map(p => ({
+      id: p.id, name: p.name, sku: p.sku || '',
+      category: p.category || '', alertQty: p.alert_qty || 0,
+      note: p.note || '', img: p.img || '',
+      stock: 0, avgCost: 0
+    }));
+    db.transactions = transactions.map(t => ({
+      id: t.id, type: t.type, productId: t.product_id,
+      qty: t.qty, price: parseFloat(t.price),
+      date: t.date, note: t.note || ''
+    }));
+    recalcStocks();
+    render();
+    setSyncStatus('ok', '已同步');
   } catch(e) {
-    setSyncStatus('err', '连接失败');
-    toast('Firebase 连接失败：' + e.message);
-    console.error(e);
+    setSyncStatus('err', '同步失败');
+    console.error('fetchAll error', e);
   }
 }
 
-function subscribeFirestore() {
-  setSyncStatus('loading', '同步中…');
-  if (unsubProducts) unsubProducts();
-  if (unsubTx) unsubTx();
-
-  const productsRef = collection(firestoreDb, 'products');
-  const txRef = collection(firestoreDb, 'transactions');
-
-  unsubProducts = onSnapshot(productsRef, snap => {
-    db.products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    recalcStocks();
-    render();
-    setSyncStatus('ok', '已同步');
-  }, err => {
-    setSyncStatus('err', '同步错误');
-    console.error('products snapshot error', err);
-  });
-
-  unsubTx = onSnapshot(query(txRef, orderBy('date', 'desc')), snap => {
-    db.transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    recalcStocks();
-    render();
-    setSyncStatus('ok', '已同步');
-  }, err => {
-    setSyncStatus('err', '同步错误');
-    console.error('tx snapshot error', err);
-  });
+// 轮询（每 10 秒刷新，实现多设备准实时同步）
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(fetchAll, 10000);
 }
 
 // ─── Persistence ──────────────────────────────────────────────────
@@ -636,8 +601,16 @@ async function persistProduct(p) {
   if (localMode) { saveLocal(); return; }
   try {
     setSyncStatus('loading', '保存中…');
-    const { id, stock, avgCost, ...data } = p; // don't persist computed fields
-    await setDoc(doc(firestoreDb, 'products', id), data);
+    const row = {
+      id: p.id, name: p.name, sku: p.sku || '',
+      category: p.category || '', alert_qty: p.alertQty || 0,
+      note: p.note || '', img: p.img || ''
+    };
+    await sbFetch('products', {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(row)
+    });
     setSyncStatus('ok', '已同步');
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
@@ -645,7 +618,7 @@ async function persistProduct(p) {
 async function removeProduct(id) {
   if (localMode) { saveLocal(); return; }
   try {
-    await deleteDoc(doc(firestoreDb, 'products', id));
+    await sbFetch(`products?id=eq.${id}`, { method: 'DELETE' });
   } catch(e) { toast('删除失败：' + e.message); }
 }
 
@@ -653,8 +626,15 @@ async function persistTx(t) {
   if (localMode) { saveLocal(); return; }
   try {
     setSyncStatus('loading', '保存中…');
-    const { id, ...data } = t;
-    await setDoc(doc(firestoreDb, 'transactions', id), data);
+    const row = {
+      id: t.id, type: t.type, product_id: t.productId,
+      qty: t.qty, price: t.price, date: t.date, note: t.note || ''
+    };
+    await sbFetch('transactions', {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(row)
+    });
     setSyncStatus('ok', '已同步');
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
@@ -662,7 +642,7 @@ async function persistTx(t) {
 async function removeTx(id) {
   if (localMode) { saveLocal(); return; }
   try {
-    await deleteDoc(doc(firestoreDb, 'transactions', id));
+    await sbFetch(`transactions?id=eq.${id}`, { method: 'DELETE' });
   } catch(e) { toast('删除失败：' + e.message); }
 }
 
