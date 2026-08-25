@@ -211,9 +211,11 @@
         <span id="syncDot" title="同步状态"></span>
         <span id="syncLabel" style="font-size:12px;color:var(--text-sub);margin-right:4px"></span>
         <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ 导出</button>
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importFile').click()">⬆ 导入</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importFile').click()">⬆ JSON</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('xlsxHelpModal').style.display='flex'">📊 Excel</button>
         <button class="btn btn-ghost btn-sm" onclick="showSetup()">⚙ 配置</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+        <input type="file" id="xlsxFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
       </div>
     </header>
 
@@ -347,6 +349,59 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('txModal')">取消</button>
       <button class="btn btn-primary" id="txSaveBtn" onclick="saveTx()">确认进货</button>
+    </div>
+  </div>
+</div>
+
+<!-- SheetJS for Excel import -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<!-- Excel 导入说明 Modal -->
+<div class="overlay" id="xlsxHelpModal" style="display:none">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h2>📊 Excel / CSV 导入说明</h2>
+      <button class="modal-close" onclick="closeModal('xlsxHelpModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-sub);margin-bottom:14px">文件需包含以下 Sheet（不区分大小写），每 Sheet 识别对应数据：</p>
+
+      <div style="margin-bottom:16px">
+        <div style="font-weight:500;margin-bottom:6px;font-size:13px">📦 Sheet 名：<code style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">产品</code> 或 <code style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">products</code></div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <tr style="background:var(--bg)"><th style="padding:6px 10px;text-align:left;border:1px solid var(--border)">列名</th><th style="padding:6px 10px;text-align:left;border:1px solid var(--border)">说明</th><th style="padding:6px 10px;text-align:left;border:1px solid var(--border)">必填</th></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">名称 / name</td><td style="padding:5px 10px;border:1px solid var(--border)">产品名称</td><td style="padding:5px 10px;border:1px solid var(--border);color:var(--red)">✓</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">SKU / sku</td><td style="padding:5px 10px;border:1px solid var(--border)">产品编码</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">分类 / category</td><td style="padding:5px 10px;border:1px solid var(--border)">产品分类</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">预警数量 / alertqty</td><td style="padding:5px 10px;border:1px solid var(--border)">低库存预警</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">备注 / note</td><td style="padding:5px 10px;border:1px solid var(--border)">备注</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+        </table>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-weight:500;margin-bottom:6px;font-size:13px">📥 Sheet 名：<code style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">进货</code> 或 <code style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">in</code></div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <tr style="background:var(--bg)"><th style="padding:6px 10px;text-align:left;border:1px solid var(--border)">列名</th><th style="padding:6px 10px;text-align:left;border:1px solid var(--border)">说明</th><th style="padding:6px 10px;text-align:left;border:1px solid var(--border)">必填</th></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">产品名称 / name</td><td style="padding:5px 10px;border:1px solid var(--border)">需与产品列表匹配</td><td style="padding:5px 10px;border:1px solid var(--border);color:var(--red)">✓</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">数量 / qty</td><td style="padding:5px 10px;border:1px solid var(--border)">进货数量</td><td style="padding:5px 10px;border:1px solid var(--border);color:var(--red)">✓</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">单价 / price</td><td style="padding:5px 10px;border:1px solid var(--border)">进货单价</td><td style="padding:5px 10px;border:1px solid var(--border);color:var(--red)">✓</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">日期 / date</td><td style="padding:5px 10px;border:1px solid var(--border)">格式 2026-08-25</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+          <tr><td style="padding:5px 10px;border:1px solid var(--border)">备注 / note</td><td style="padding:5px 10px;border:1px solid var(--border)">备注</td><td style="padding:5px 10px;border:1px solid var(--border)">—</td></tr>
+        </table>
+      </div>
+
+      <div style="margin-bottom:8px">
+        <div style="font-weight:500;margin-bottom:6px;font-size:13px">📤 Sheet 名：<code style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">出库</code> 或 <code style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">out</code></div>
+        <div style="font-size:12px;color:var(--text-sub)">列名同进货 Sheet，数量/单价为出库数据。</div>
+      </div>
+
+      <div style="background:var(--amber-light);border:1px solid #e8c97a;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--amber);margin-top:14px">
+        💡 可以只有其中一个或多个 Sheet，没有的 Sheet 跳过。产品名称需完全匹配。
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('xlsxHelpModal')">关闭</button>
+      <button class="btn btn-primary" onclick="closeModal('xlsxHelpModal');document.getElementById('xlsxFile').click()">选择文件</button>
     </div>
   </div>
 </div>
@@ -722,8 +777,29 @@ window.closeModal = id => document.getElementById(id).style.display = 'none';
 
 window.handleImg = function(e) {
   const file = e.target.files[0]; if (!file) return;
+  // 压缩图片到 200KB 以内，避免超 Firestore 文档 1MB 限制
   const reader = new FileReader();
-  reader.onload = ev => { currentImgData = ev.target.result; updateImgPreview(currentImgData); document.getElementById('imgUrl').value = ''; };
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX_PX = 400; // 最大边长 400px，足够缩略图显示
+      let w = img.width, h = img.height;
+      if (w > MAX_PX || h > MAX_PX) {
+        const ratio = Math.min(MAX_PX/w, MAX_PX/h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      // 尝试 quality 0.7，若仍 > 200KB 则降到 0.4
+      let data = canvas.toDataURL('image/jpeg', 0.7);
+      if (data.length > 200000) data = canvas.toDataURL('image/jpeg', 0.4);
+      currentImgData = data;
+      updateImgPreview(data);
+      document.getElementById('imgUrl').value = '';
+    };
+    img.src = ev.target.result;
+  };
   reader.readAsDataURL(file);
 };
 
@@ -862,6 +938,101 @@ window.importData = async function(e) {
   };
   reader.readAsText(file);
   e.target.value = '';
+};
+
+// ─── Excel Import ─────────────────────────────────────────────────
+window.importExcel = async function(e) {
+  const file = e.target.files[0]; if (!file) return;
+  e.target.value = '';
+  if (typeof XLSX === 'undefined') { toast('Excel 解析库加载中，请稍后再试'); return; }
+
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'array', cellDates: true });
+
+      // helper: find sheet by name variants
+      const findSheet = (...names) => {
+        for (const n of names) {
+          const key = wb.SheetNames.find(s => s.trim().toLowerCase() === n.toLowerCase());
+          if (key) return XLSX.utils.sheet_to_json(wb.Sheets[key], { defval: '' });
+        }
+        return null;
+      };
+
+      // normalize header key
+      const norm = k => String(k).trim().toLowerCase().replace(/\s+/g,'');
+
+      // ── 产品 Sheet ──
+      const prodRows = findSheet('产品', 'products', 'product');
+      let newProducts = 0;
+      if (prodRows && prodRows.length) {
+        for (const row of prodRows) {
+          const r = {};
+          for (const k in row) r[norm(k)] = row[k];
+          const name = String(r['名称'] || r['name'] || '').trim();
+          if (!name) continue;
+          // skip if already exists by name
+          if (db.products.find(p => p.name === name)) continue;
+          const p = {
+            id: uid(), name,
+            sku: String(r['sku'] || r['sku/编码'] || r['编码'] || '').trim(),
+            category: String(r['分类'] || r['category'] || '').trim(),
+            alertQty: parseInt(r['预警数量'] || r['alertqty'] || r['alert'] || 0) || 0,
+            note: String(r['备注'] || r['note'] || '').trim(),
+            img: '', stock: 0, avgCost: 0,
+          };
+          db.products.push(p);
+          await persistProduct(p);
+          newProducts++;
+        }
+      }
+
+      // helper: parse date to YYYY-MM-DD
+      const parseDate = v => {
+        if (!v) return new Date().toISOString().split('T')[0];
+        if (v instanceof Date) return v.toISOString().split('T')[0];
+        const s = String(v).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        const d = new Date(s);
+        return isNaN(d) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0];
+      };
+
+      // ── 进货 / 出库 Sheet ──
+      let newTx = 0;
+      for (const [type, sheetNames] of [['in', ['进货','in','inbound']], ['out', ['出库','out','outbound']]]) {
+        const rows = findSheet(...sheetNames);
+        if (!rows || !rows.length) continue;
+        for (const row of rows) {
+          const r = {};
+          for (const k in row) r[norm(k)] = row[k];
+          const productName = String(r['产品名称'] || r['name'] || r['产品'] || '').trim();
+          const qty = parseInt(r['数量'] || r['qty'] || 0);
+          const price = parseFloat(r['单价'] || r['price'] || 0);
+          if (!productName || !qty || isNaN(price)) continue;
+          const prod = db.products.find(p => p.name === productName);
+          if (!prod) continue; // 产品不存在则跳过
+          const tx = {
+            id: uid(), type, productId: prod.id, qty, price,
+            date: parseDate(r['日期'] || r['date']),
+            note: String(r['备注'] || r['note'] || '').trim(),
+          };
+          db.transactions.push(tx);
+          await persistTx(tx);
+          newTx++;
+        }
+      }
+
+      recalcStocks();
+      if (localMode) saveLocal();
+      render();
+      toast(`导入完成：${newProducts} 个新产品，${newTx} 条记录`);
+    } catch(err) {
+      console.error(err);
+      toast('Excel 解析失败：' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
 };
 
 // ─── Utils ────────────────────────────────────────────────────────
