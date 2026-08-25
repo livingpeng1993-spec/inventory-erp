@@ -214,8 +214,8 @@
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importFile').click()">⬆ JSON</button>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('xlsxHelpModal').style.display='flex'">📊 Excel</button>
         <button class="btn btn-ghost btn-sm" onclick="showSetup()">⚙ 配置</button>
-        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
-        <input type="file" id="xlsxFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
+        <input type="file" id="importFile" accept=".json" style="display:none">
+        <input type="file" id="xlsxFile" accept=".xlsx,.xls,.csv" style="display:none">
       </div>
     </header>
 
@@ -235,7 +235,7 @@
           <div class="table-toolbar">
             <div class="search-box">
               <span style="color:var(--text-sub)">🔍</span>
-              <input id="searchProducts" placeholder="搜索产品名称/SKU…" oninput="renderProducts()">
+              <input id="searchProducts" placeholder="搜索产品名称/SKU…">
             </div>
             <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ 添加产品</button>
           </div>
@@ -254,7 +254,7 @@
           <div class="table-toolbar">
             <div class="search-box">
               <span style="color:var(--text-sub)">🔍</span>
-              <input id="searchIn" placeholder="搜索产品名称…" oninput="renderIn()">
+              <input id="searchIn" placeholder="搜索产品名称…">
             </div>
             <button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openTxModal('in')">+ 新增进货</button>
           </div>
@@ -273,7 +273,7 @@
           <div class="table-toolbar">
             <div class="search-box">
               <span style="color:var(--text-sub)">🔍</span>
-              <input id="searchOut" placeholder="搜索产品名称…" oninput="renderOut()">
+              <input id="searchOut" placeholder="搜索产品名称…">
             </div>
             <button class="btn btn-primary btn-sm" style="background:var(--red)" onclick="openTxModal('out')">+ 新增出库</button>
           </div>
@@ -304,8 +304,8 @@
             <img id="imgPreviewTag" style="display:none">
           </div>
           <div class="img-input-wrap">
-            <input type="file" id="imgUpload" accept="image/*" style="display:none" onchange="handleImg(event)">
-            <input type="text" id="imgUrl" placeholder="或粘贴图片URL…" oninput="handleImgUrl()">
+            <input type="file" id="imgUpload" accept="image/*" style="display:none">
+            <input type="text" id="imgUrl" placeholder="或粘贴图片URL…">
             <div style="margin-top:4px;font-size:11px;color:var(--text-sub)">点击左侧方块上传图片，或粘贴URL</div>
           </div>
         </div>
@@ -1044,6 +1044,32 @@ window.toast = function(msg) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2800);
 };
+
+// ─── Bind DOM events (module scope safe) ─────────────────────────
+// All onclick="fn()" in HTML go to window.fn, but file input & imgUrl
+// are inside module — bind them here to avoid "fn is not defined" errors.
+document.addEventListener('DOMContentLoaded', () => {
+  // Image upload
+  const imgUpload = document.getElementById('imgUpload');
+  if (imgUpload) imgUpload.addEventListener('change', e => window.handleImg(e));
+
+  // Image URL input
+  const imgUrlInput = document.getElementById('imgUrl');
+  if (imgUrlInput) imgUrlInput.addEventListener('input', () => window.handleImgUrl());
+
+  // Search boxes
+  document.getElementById('searchProducts')?.addEventListener('input', renderProducts);
+  document.getElementById('searchIn')?.addEventListener('input', renderIn);
+  document.getElementById('searchOut')?.addEventListener('input', renderOut);
+
+  // Excel file input
+  const xlsxFile = document.getElementById('xlsxFile');
+  if (xlsxFile) xlsxFile.addEventListener('change', e => window.importExcel(e));
+
+  // JSON import file input
+  const importFile = document.getElementById('importFile');
+  if (importFile) importFile.addEventListener('change', e => window.importData(e));
+});
 
 startup();
 </script>
