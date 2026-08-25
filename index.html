@@ -781,8 +781,18 @@ window.closeModal = id => document.getElementById(id).style.display = 'none';
 function updateImgPreview(src) {
   const wrap = document.getElementById('imgPreview');
   const img = document.getElementById('imgPreviewTag');
-  if (src) { img.src = src; img.style.display = 'block'; wrap.textContent = ''; wrap.appendChild(img); }
-  else { img.style.display = 'none'; wrap.textContent = '📷'; }
+  if (src) {
+    img.src = src;
+    img.style.display = 'block';
+    // 只清除文字节点，不销毁 img 元素
+    wrap.childNodes.forEach(n => { if (n.nodeType === Node.TEXT_NODE) n.remove(); });
+  } else {
+    img.style.display = 'none';
+    img.src = '';
+    // 只在没有文字节点时才插入占位符
+    const hasText = [...wrap.childNodes].some(n => n.nodeType === Node.TEXT_NODE);
+    if (!hasText) wrap.insertBefore(document.createTextNode('📷'), img);
+  }
 }
 
 window.saveProduct = async function() {
