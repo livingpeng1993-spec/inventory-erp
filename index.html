@@ -135,6 +135,15 @@
   /* 产品图片可点击 */
   .product-img.has-img { cursor: zoom-in; }
 
+  /* 批量操作栏 */
+  .batch-bar { display: none; align-items: center; gap: 10px; padding: 8px 16px; background: var(--accent-light); border-bottom: 1px solid #c5d8f8; flex-wrap: wrap; }
+  .batch-bar.show { display: flex; }
+  .batch-bar span { font-size: 13px; color: var(--accent); font-weight: 500; }
+  .batch-bar select { width: auto; padding: 5px 10px; font-size: 13px; }
+  /* 勾选框列 */
+  th.col-check, td.col-check { width: 36px; padding: 10px 6px 10px 14px; }
+  input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+
   /* 分类管理弹窗 */
   .cat-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 13px; }
   .cat-del { background: none; border: none; color: var(--text-sub); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
@@ -267,8 +276,16 @@
               <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ 添加产品</button>
             </div>
           </div>
+          <!-- 批量操作栏 -->
+          <div class="batch-bar" id="batchBar">
+            <span id="batchCount">已选 0 项</span>
+            <select id="batchCatSelect"><option value="">— 选择目标分类 —</option></select>
+            <button class="btn btn-primary btn-sm" id="batchApplyBtn">应用分类</button>
+            <button class="btn btn-ghost btn-sm" id="batchClearBtn">取消选择</button>
+          </div>
           <div style="overflow-x:auto">
             <table><thead><tr>
+              <th class="col-check"><input type="checkbox" id="checkAll" title="全选"></th>
               <th>产品</th><th>SKU</th><th>库存数量</th><th>库存均价</th><th>库存价值</th><th>状态</th><th>操作</th>
             </tr></thead><tbody id="productTable"></tbody></table>
           </div>
@@ -494,6 +511,8 @@ let activeCategory = 'all';
 // 分类列表（持久化到 localStorage）
 let categories = [];
 const CAT_KEY = 'erp_categories';
+// 批量编辑勾选状态
+let selectedIds = new Set();
 
 // ─── Startup ──────────────────────────────────────────────────────
 function startup() {
@@ -739,12 +758,29 @@ function renderProducts() {
   const tbody = document.getElementById('productTable');
   tbody.innerHTML = '';
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📦</div>暂无产品</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📦</div>暂无产品</div></td></tr>`;
   } else {
     list.forEach(p => {
       const isLow = p.alertQty > 0 && p.stock <= p.alertQty;
       const tr = document.createElement('tr');
-      // 图片+名称
+      tr.dataset.id = p.id;
+      if (selectedIds.has(p.id)) tr.style.background = 'var(--accent-light)';
+
+      // ── 勾选框
+      const cbTd = document.createElement('td');
+      cbTd.className = 'col-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = selectedIds.has(p.id);
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedIds.add(p.id); else selectedIds.delete(p.id);
+        tr.style.background = cb.checked ? 'var(--accent-light)' : '';
+        updateBatchBar();
+      });
+      cbTd.appendChild(cb);
+      tr.appendChild(cbTd);
+
+      // ── 图片+名称
       const imgDiv = document.createElement('div');
       imgDiv.className = 'product-img' + (p.img ? ' has-img' : '');
       if (p.img) {
@@ -760,7 +796,8 @@ function renderProducts() {
       const cell = document.createElement('div');
       cell.className = 'product-cell';
       cell.appendChild(imgDiv); cell.appendChild(nameDiv);
-      // 操作按钮
+
+      // ── 操作按钮
       const editBtn = document.createElement('button');
       editBtn.className = 'btn btn-ghost btn-sm'; editBtn.textContent = '编辑';
       editBtn.addEventListener('click', () => openProductModal(p.id));
@@ -770,7 +807,10 @@ function renderProducts() {
       const actDiv = document.createElement('div');
       actDiv.className = 'actions-cell';
       actDiv.appendChild(editBtn); actDiv.appendChild(delBtn);
-      tr.innerHTML = `
+
+      // ── 其余列
+      const rest = document.createElement('tr');
+      rest.innerHTML = `
         <td></td>
         <td><span style="font-size:12px;color:var(--text-sub)">${esc(p.sku||'—')}</span></td>
         <td><strong>${p.stock}</strong></td>
@@ -778,10 +818,18 @@ function renderProducts() {
         <td>¥${fmt(p.stock * p.avgCost)}</td>
         <td>${isLow?'<span class="badge badge-low">⚠ 低库存</span>':'<span class="badge badge-stock">正常</span>'}</td>
         <td></td>`;
-      tr.cells[0].appendChild(cell);
-      tr.cells[6].appendChild(actDiv);
+      [...rest.cells].forEach(td => tr.appendChild(td));
+      tr.cells[1].appendChild(cell);   // 产品列 (index 1, after checkbox)
+      tr.cells[7].appendChild(actDiv); // 操作列 (index 7)
       tbody.appendChild(tr);
     });
+  }
+  // 同步全选框状态
+  const checkAll = document.getElementById('checkAll');
+  if (checkAll) {
+    const pageIds = list.map(p => p.id);
+    checkAll.checked = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
+    checkAll.indeterminate = pageIds.some(id => selectedIds.has(id)) && !checkAll.checked;
   }
   renderPagination('productPagination', total, productPage, p => { productPage=p; renderProducts(); });
 }
@@ -1208,6 +1256,28 @@ function bindEvents() {
     if (e.key === 'Enter') addCategory();
   });
   document.getElementById('catAddBtn').onclick = addCategory;
+
+  // ④ 批量操作
+  // 全选框
+  document.getElementById('checkAll').addEventListener('change', function() {
+    // 仅操作当前页可见行
+    document.querySelectorAll('#productTable input[type=checkbox]').forEach(cb => {
+      cb.checked = this.checked;
+      const id = cb.closest('tr').dataset.id;
+      if (id) { if (this.checked) selectedIds.add(id); else selectedIds.delete(id); }
+      const tr = cb.closest('tr');
+      if (tr) tr.style.background = this.checked ? 'var(--accent-light)' : '';
+    });
+    updateBatchBar();
+  });
+  // 应用分类
+  document.getElementById('batchApplyBtn').addEventListener('click', batchApplyCategory);
+  // 取消选择
+  document.getElementById('batchClearBtn').addEventListener('click', () => {
+    selectedIds.clear();
+    renderProducts();
+    updateBatchBar();
+  });
 }
 
 function handleImgFile(e) {
@@ -1235,6 +1305,46 @@ function handleImgFile(e) {
     imgEl.src = ev.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+// ─── 批量编辑分类 ─────────────────────────────────────────────────
+function updateBatchBar() {
+  const bar = document.getElementById('batchBar');
+  const count = selectedIds.size;
+  bar.classList.toggle('show', count > 0);
+  document.getElementById('batchCount').textContent = `已选 ${count} 个产品`;
+  // 刷新分类下拉
+  const sel = document.getElementById('batchCatSelect');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— 选择目标分类 —</option>';
+  const allCats = [...new Set([...categories, ...db.products.map(p => p.category).filter(Boolean)])];
+  allCats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    if (c === cur) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  // 允许手动输入（改为 input+datalist 组合）
+}
+
+async function batchApplyCategory() {
+  const cat = document.getElementById('batchCatSelect').value;
+  if (!cat) { toast('请先选择目标分类'); return; }
+  if (!selectedIds.size) { toast('未选中任何产品'); return; }
+  if (!confirm(`将 ${selectedIds.size} 个产品的分类改为「${cat}」？`)) return;
+
+  const ids = [...selectedIds];
+  for (const id of ids) {
+    const p = db.products.find(x => x.id === id);
+    if (!p) continue;
+    p.category = cat;
+    await persistProduct(p);
+  }
+  selectedIds.clear();
+  recalcStocks();
+  if (localMode) saveLocal();
+  render();
+  toast(`✅ 已将 ${ids.length} 个产品分类改为「${cat}」`);
 }
 
 // ─── ① 灯箱 ──────────────────────────────────────────────────────
