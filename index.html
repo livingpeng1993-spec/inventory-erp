@@ -649,15 +649,19 @@ function fmt(n) { return Number(n).toLocaleString('zh-CN', { minimumFractionDigi
 
 function renderCategoryChips() {
   const cats = ['all', ...new Set(db.products.map(p=>p.category).filter(Boolean))];
-  document.getElementById('categoryChips').innerHTML = cats.map(c =>
-    `<div class="chip ${activeCategory===c?'active':''}" onclick="setCategory('${c}')">${c==='all'?'全部':c}</div>`
-  ).join('');
+  const container = document.getElementById('categoryChips');
+  container.innerHTML = '';
+  cats.forEach(c => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (activeCategory === c ? ' active' : '');
+    chip.textContent = c === 'all' ? '全部' : c;
+    chip.addEventListener('click', () => {
+      activeCategory = c; productPage = 1;
+      renderCategoryChips(); renderProducts();
+    });
+    container.appendChild(chip);
+  });
 }
-
-window.setCategory = function(c) {
-  activeCategory = c; productPage = 1;
-  renderCategoryChips(); renderProducts();
-};
 
 function renderProducts() {
   const q = (document.getElementById('searchProducts').value||'').toLowerCase();
@@ -670,30 +674,49 @@ function renderProducts() {
   productPage = Math.min(productPage, pages);
   list = list.slice((productPage-1)*PAGE_SIZE, productPage*PAGE_SIZE);
   const tbody = document.getElementById('productTable');
+  tbody.innerHTML = '';
   if (!list.length) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📦</div>暂无产品</div></td></tr>`;
   } else {
-    tbody.innerHTML = list.map(p => {
+    list.forEach(p => {
       const isLow = p.alertQty > 0 && p.stock <= p.alertQty;
-      const imgHtml = p.img
-        ? `<div class="product-img"><img src="${p.img}" alt="" onerror="this.parentNode.textContent='📷'"></div>`
-        : `<div class="product-img">📷</div>`;
-      return `<tr>
-        <td><div class="product-cell">${imgHtml}<div>
-          <div class="product-name">${esc(p.name)}</div>
-          ${p.note?`<div class="product-sku">${esc(p.note)}</div>`:''}
-        </div></div></td>
+      const tr = document.createElement('tr');
+      // 图片+名称
+      const imgDiv = document.createElement('div');
+      imgDiv.className = 'product-img';
+      if (p.img) {
+        const im = document.createElement('img');
+        im.src = p.img; im.alt = '';
+        im.onerror = () => { imgDiv.textContent = '📷'; };
+        imgDiv.appendChild(im);
+      } else { imgDiv.textContent = '📷'; }
+      const nameDiv = document.createElement('div');
+      nameDiv.innerHTML = `<div class="product-name">${esc(p.name)}</div>${p.note?`<div class="product-sku">${esc(p.note)}</div>`:''}`;
+      const cell = document.createElement('div');
+      cell.className = 'product-cell';
+      cell.appendChild(imgDiv); cell.appendChild(nameDiv);
+      // 操作按钮
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm'; editBtn.textContent = '编辑';
+      editBtn.addEventListener('click', () => openProductModal(p.id));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger btn-sm'; delBtn.textContent = '删除';
+      delBtn.addEventListener('click', () => deleteProduct(p.id));
+      const actDiv = document.createElement('div');
+      actDiv.className = 'actions-cell';
+      actDiv.appendChild(editBtn); actDiv.appendChild(delBtn);
+      tr.innerHTML = `
+        <td></td>
         <td><span style="font-size:12px;color:var(--text-sub)">${esc(p.sku||'—')}</span></td>
         <td><strong>${p.stock}</strong></td>
         <td>¥${fmt(p.avgCost)}</td>
         <td>¥${fmt(p.stock * p.avgCost)}</td>
         <td>${isLow?'<span class="badge badge-low">⚠ 低库存</span>':'<span class="badge badge-stock">正常</span>'}</td>
-        <td><div class="actions-cell">
-          <button class="btn btn-ghost btn-sm" onclick="editProduct('${p.id}')">编辑</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">删除</button>
-        </div></td>
-      </tr>`;
-    }).join('');
+        <td></td>`;
+      tr.cells[0].appendChild(cell);
+      tr.cells[6].appendChild(actDiv);
+      tbody.appendChild(tr);
+    });
   }
   renderPagination('productPagination', total, productPage, p => { productPage=p; renderProducts(); });
 }
@@ -714,23 +737,42 @@ function renderTxTable(type) {
   if (type==='in') inPage=page; else outPage=page;
   list = list.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
   const tbody = document.getElementById(type==='in'?'inTable':'outTable');
+  tbody.innerHTML = '';
   if (!list.length) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">${type==='in'?'📥':'📤'}</div>暂无记录</div></td></tr>`;
   } else {
-    tbody.innerHTML = list.map(t => {
+    list.forEach(t => {
       const p = db.products.find(x=>x.id===t.productId);
-      const imgHtml = p?.img
-        ? `<div class="product-img" style="width:32px;height:32px"><img src="${p.img}" alt="" onerror="this.parentNode.textContent='📷'"></div>`
-        : `<div class="product-img" style="width:32px;height:32px">📷</div>`;
-      return `<tr>
-        <td><div class="product-cell">${imgHtml}<span>${esc(p?.name||'已删除')}</span></div></td>
+      const tr = document.createElement('tr');
+      // 图片+名称 cell
+      const imgDiv = document.createElement('div');
+      imgDiv.className = 'product-img';
+      imgDiv.style.cssText = 'width:32px;height:32px';
+      if (p?.img) {
+        const im = document.createElement('img'); im.src = p.img; im.alt = '';
+        im.onerror = () => { imgDiv.textContent = '📷'; };
+        imgDiv.appendChild(im);
+      } else { imgDiv.textContent = '📷'; }
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = p?.name || '已删除';
+      const cell = document.createElement('div');
+      cell.className = 'product-cell';
+      cell.appendChild(imgDiv); cell.appendChild(nameSpan);
+      // 删除按钮
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger btn-sm'; delBtn.textContent = '删除';
+      delBtn.addEventListener('click', () => deleteTx(t.id));
+      tr.innerHTML = `
+        <td></td>
         <td>${t.qty}</td><td>¥${fmt(t.price)}</td>
         <td><strong>¥${fmt(t.qty*t.price)}</strong></td>
         <td>${t.date}</td>
         <td style="color:var(--text-sub);font-size:12px">${esc(t.note||'—')}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteTx('${t.id}')">删除</button></td>
-      </tr>`;
-    }).join('');
+        <td></td>`;
+      tr.cells[0].appendChild(cell);
+      tr.cells[6].appendChild(delBtn);
+      tbody.appendChild(tr);
+    });
   }
   renderPagination(type==='in'?'inPagination':'outPagination', total, page, p => {
     if(type==='in') inPage=p; else outPage=p; renderTxTable(type);
@@ -739,13 +781,35 @@ function renderTxTable(type) {
 
 function renderPagination(elId, total, page, cb) {
   const el = document.getElementById(elId);
-  const pages = Math.ceil(total/PAGE_SIZE)||1;
-  if (pages <= 1) { el.innerHTML=''; return; }
-  let html = `<span>共 ${total} 条</span><div class="page-btns">`;
-  html += `<button class="page-btn" ${page<=1?'disabled':''} onclick="(${cb.toString()})(${page-1})">‹</button>`;
-  for (let i=1;i<=pages;i++) html += `<button class="page-btn ${i===page?'active':''}" onclick="(${cb.toString()})(${i})">${i}</button>`;
-  html += `<button class="page-btn" ${page>=pages?'disabled':''} onclick="(${cb.toString()})(${page+1})">›</button></div>`;
-  el.innerHTML = html;
+  const pages = Math.ceil(total / PAGE_SIZE) || 1;
+  el.innerHTML = '';
+  if (pages <= 1) return;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;width:100%';
+
+  const info = document.createElement('span');
+  info.textContent = `共 ${total} 条`;
+  wrap.appendChild(info);
+
+  const btnWrap = document.createElement('div');
+  btnWrap.className = 'page-btns';
+
+  const mkBtn = (label, targetPage, disabled, active) => {
+    const b = document.createElement('button');
+    b.className = 'page-btn' + (active ? ' active' : '');
+    b.textContent = label;
+    b.disabled = disabled;
+    if (!disabled) b.addEventListener('click', () => cb(targetPage));
+    btnWrap.appendChild(b);
+  };
+
+  mkBtn('‹', page - 1, page <= 1, false);
+  for (let i = 1; i <= pages; i++) mkBtn(String(i), i, false, i === page);
+  mkBtn('›', page + 1, page >= pages, false);
+
+  wrap.appendChild(btnWrap);
+  el.appendChild(wrap);
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────
