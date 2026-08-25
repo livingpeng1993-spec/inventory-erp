@@ -119,9 +119,29 @@
   .page-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .page-btn:disabled { opacity: .4; cursor: default; }
 
-  .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
   .chip { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: var(--card); color: var(--text-sub); transition: all .15s; }
   .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* 每页条数选择 */
+  .page-size-select { font-size: 12px; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border); color: var(--text-sub); background: var(--card); cursor: pointer; }
+
+  /* 灯箱 */
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 500; display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+  .lightbox img { max-width: 90vw; max-height: 88vh; border-radius: 8px; object-fit: contain; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+  .lightbox-close { position: absolute; top: 18px; right: 22px; color: #fff; font-size: 28px; cursor: pointer; line-height: 1; background: none; border: none; opacity: .8; }
+  .lightbox-close:hover { opacity: 1; }
+
+  /* 产品图片可点击 */
+  .product-img.has-img { cursor: zoom-in; }
+
+  /* 分类管理弹窗 */
+  .cat-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 13px; }
+  .cat-del { background: none; border: none; color: var(--text-sub); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+  .cat-del:hover { color: var(--red); }
+  .cat-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; min-height: 36px; }
+  .cat-add-row { display: flex; gap: 8px; }
+  .cat-add-row input { flex: 1; }
 
   @media (max-width: 640px) {
     main { padding: 12px; }
@@ -237,7 +257,15 @@
               <span style="color:var(--text-sub)">🔍</span>
               <input id="searchProducts" placeholder="搜索产品名称/SKU…">
             </div>
-            <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ 添加产品</button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="pageSizeSelect" class="page-size-select">
+                <option value="10">10条/页</option>
+                <option value="30">30条/页</option>
+                <option value="50">50条/页</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="manageCatBtn">🏷 分类管理</button>
+              <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ 添加产品</button>
+            </div>
           </div>
           <div style="overflow-x:auto">
             <table><thead><tr>
@@ -315,7 +343,11 @@
         <div class="form-group"><label>SKU / 编码</label><input type="text" id="productSku" placeholder="例如 SKU-001"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>分类</label><input type="text" id="productCategory" placeholder="例如 美妆、原料"></div>
+        <div class="form-group">
+          <label>分类</label>
+          <input type="text" id="productCategory" list="categoryDatalist" placeholder="选择或输入分类">
+          <datalist id="categoryDatalist"></datalist>
+        </div>
         <div class="form-group"><label>低库存预警数量</label><input type="number" id="productAlertQty" placeholder="例如 10" min="0"></div>
       </div>
       <div class="form-group"><label>备注</label><textarea id="productNote" rows="2" placeholder="产品描述或备注…"></textarea></div>
@@ -349,6 +381,33 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('txModal')">取消</button>
       <button class="btn btn-primary" id="txSaveBtn" onclick="saveTx()">确认进货</button>
+    </div>
+  </div>
+</div>
+
+<!-- 灯箱 -->
+<div class="lightbox" id="lightbox" style="display:none">
+  <button class="lightbox-close" id="lightboxClose">✕</button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<!-- 分类管理弹窗 -->
+<div class="overlay" id="catModal" style="display:none">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h2>🏷 分类管理</h2>
+      <button class="modal-close" onclick="closeModal('catModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text-sub);margin-bottom:10px">管理产品分类标签，添加后可在产品表单中选择</div>
+      <div class="cat-list" id="catList"></div>
+      <div class="cat-add-row">
+        <input type="text" id="catInput" placeholder="输入新分类名称，回车添加">
+        <button class="btn btn-primary btn-sm" id="catAddBtn">添加</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('catModal')">关闭</button>
     </div>
   </div>
 </div>
@@ -430,8 +489,11 @@ let currentTxType = 'in';
 let editingProductId = null;
 let currentImgData = '';
 let productPage = 1, inPage = 1, outPage = 1;
-const PAGE_SIZE = 10;
+let PAGE_SIZE = 10;
 let activeCategory = 'all';
+// 分类列表（持久化到 localStorage）
+let categories = [];
+const CAT_KEY = 'erp_categories';
 
 // ─── Startup ──────────────────────────────────────────────────────
 function startup() {
@@ -629,6 +691,7 @@ function render() {
   renderProducts();
   renderIn();
   renderOut();
+  updateCategoryDatalist();
 }
 
 function renderSummary() {
@@ -683,12 +746,14 @@ function renderProducts() {
       const tr = document.createElement('tr');
       // 图片+名称
       const imgDiv = document.createElement('div');
-      imgDiv.className = 'product-img';
+      imgDiv.className = 'product-img' + (p.img ? ' has-img' : '');
       if (p.img) {
         const im = document.createElement('img');
         im.src = p.img; im.alt = '';
-        im.onerror = () => { imgDiv.textContent = '📷'; };
+        im.onerror = () => { imgDiv.textContent = '📷'; imgDiv.classList.remove('has-img'); };
         imgDiv.appendChild(im);
+        imgDiv.title = '点击放大';
+        imgDiv.addEventListener('click', e => { e.stopPropagation(); openLightbox(p.img); });
       } else { imgDiv.textContent = '📷'; }
       const nameDiv = document.createElement('div');
       nameDiv.innerHTML = `<div class="product-name">${esc(p.name)}</div>${p.note?`<div class="product-sku">${esc(p.note)}</div>`:''}`;
@@ -746,12 +811,14 @@ function renderTxTable(type) {
       const tr = document.createElement('tr');
       // 图片+名称 cell
       const imgDiv = document.createElement('div');
-      imgDiv.className = 'product-img';
+      imgDiv.className = 'product-img' + (p?.img ? ' has-img' : '');
       imgDiv.style.cssText = 'width:32px;height:32px';
       if (p?.img) {
         const im = document.createElement('img'); im.src = p.img; im.alt = '';
-        im.onerror = () => { imgDiv.textContent = '📷'; };
+        im.onerror = () => { imgDiv.textContent = '📷'; imgDiv.classList.remove('has-img'); };
         imgDiv.appendChild(im);
+        imgDiv.title = '点击放大';
+        imgDiv.addEventListener('click', e => { e.stopPropagation(); openLightbox(p.img); });
       } else { imgDiv.textContent = '📷'; }
       const nameSpan = document.createElement('span');
       nameSpan.textContent = p?.name || '已删除';
@@ -833,6 +900,7 @@ window.openProductModal = function(id) {
   document.getElementById('imgUrl').value = p?.img||'';
   currentImgData = p?.img||'';
   updateImgPreview(p?.img||'');
+  updateCategoryDatalist();  // 刷新分类下拉
   document.getElementById('productModal').style.display = 'flex';
 };
 
@@ -1119,6 +1187,27 @@ function bindEvents() {
   // File imports
   document.getElementById('xlsxFile').onchange = e => importExcel(e);
   document.getElementById('importFile').onchange = e => importData(e);
+
+  // ① 每页条数
+  document.getElementById('pageSizeSelect').onchange = function() {
+    PAGE_SIZE = parseInt(this.value);
+    productPage = 1; renderProducts();
+  };
+
+  // ② 灯箱关闭
+  const lightbox = document.getElementById('lightbox');
+  document.getElementById('lightboxClose').onclick = () => lightbox.style.display = 'none';
+  lightbox.onclick = e => { if (e.target === lightbox || e.target === document.getElementById('lightboxImg')) lightbox.style.display = 'none'; };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') lightbox.style.display = 'none'; });
+
+  // ③ 分类管理按钮
+  document.getElementById('manageCatBtn').onclick = openCatModal;
+
+  // 分类输入回车
+  document.getElementById('catInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addCategory();
+  });
+  document.getElementById('catAddBtn').onclick = addCategory;
 }
 
 function handleImgFile(e) {
@@ -1148,7 +1237,91 @@ function handleImgFile(e) {
   reader.readAsDataURL(file);
 }
 
+// ─── ① 灯箱 ──────────────────────────────────────────────────────
+function openLightbox(src) {
+  const lb = document.getElementById('lightbox');
+  document.getElementById('lightboxImg').src = src;
+  lb.style.display = 'flex';
+}
+
+// ─── ② 分类管理 ───────────────────────────────────────────────────
+function loadCategories() {
+  try {
+    const raw = localStorage.getItem(CAT_KEY);
+    categories = raw ? JSON.parse(raw) : [];
+  } catch { categories = []; }
+  // 自动补充产品里已存在的分类
+  db.products.forEach(p => {
+    if (p.category && !categories.includes(p.category)) categories.push(p.category);
+  });
+}
+
+function saveCategories() {
+  localStorage.setItem(CAT_KEY, JSON.stringify(categories));
+}
+
+function openCatModal() {
+  renderCatList();
+  document.getElementById('catInput').value = '';
+  document.getElementById('catModal').style.display = 'flex';
+}
+
+function renderCatList() {
+  const container = document.getElementById('catList');
+  container.innerHTML = '';
+  if (!categories.length) {
+    container.innerHTML = '<span style="font-size:12px;color:var(--text-sub)">暂无分类，在下方添加</span>';
+    return;
+  }
+  categories.forEach(c => {
+    const tag = document.createElement('div');
+    tag.className = 'cat-tag';
+    tag.textContent = c;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'cat-del'; delBtn.textContent = '×';
+    delBtn.title = '删除分类';
+    delBtn.onclick = () => {
+      categories = categories.filter(x => x !== c);
+      saveCategories();
+      renderCatList();
+      renderCategoryChips();
+      updateCategoryDatalist();
+    };
+    tag.appendChild(delBtn);
+    container.appendChild(tag);
+  });
+}
+
+function addCategory() {
+  const input = document.getElementById('catInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (categories.includes(val)) { toast('该分类已存在'); return; }
+  categories.push(val);
+  saveCategories();
+  renderCatList();
+  renderCategoryChips();
+  updateCategoryDatalist();
+  input.value = '';
+  input.focus();
+}
+
+// 更新产品表单 datalist
+function updateCategoryDatalist() {
+  const dl = document.getElementById('categoryDatalist');
+  if (!dl) return;
+  dl.innerHTML = '';
+  // 合并固定分类 + 产品里已有的分类
+  const allCats = [...new Set([...categories, ...db.products.map(p => p.category).filter(Boolean)])];
+  allCats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    dl.appendChild(opt);
+  });
+}
+
 startup();
+loadCategories();
 bindEvents();
 </script>
 </body>
