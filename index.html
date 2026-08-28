@@ -147,6 +147,14 @@
   .new-data-banner { display:none;background:var(--accent);color:#fff;font-size:13px;text-align:center;padding:7px;cursor:pointer; }
   .new-data-banner.show { display:block; }
 
+  /* 表头排序 */
+  .sortable-th { cursor:pointer; user-select:none; white-space:nowrap; }
+  .sortable-th:hover { color:var(--accent); }
+  .sort-icon { font-size:11px; color:var(--text-sub); margin-left:2px; }
+  .sortable-th.sort-asc .sort-icon::after { content:'↑'; color:var(--accent); }
+  .sortable-th.sort-desc .sort-icon::after { content:'↓'; color:var(--accent); }
+  .sortable-th.sort-asc .sort-icon, .sortable-th.sort-desc .sort-icon { font-size:0; }
+
   /* 批量进出库弹窗 */
   .tx-row { display:grid; grid-template-columns:1fr 90px 100px 32px; gap:6px; margin-bottom:6px; align-items:center; }
   .tx-row input, .tx-row select { margin:0; }
@@ -286,7 +294,11 @@
           <div style="overflow-x:auto">
             <table><thead><tr>
               <th class="col-check"><input type="checkbox" id="checkAll" title="全选"></th>
-              <th>产品</th><th>SKU</th><th>库存数量</th><th>库存均价</th><th>库存价值</th><th>状态</th><th>操作</th>
+              <th>产品</th><th>SKU</th>
+              <th class="sortable-th" id="th-stock">库存数量 <span class="sort-icon">⇅</span></th>
+              <th>库存均价</th>
+              <th class="sortable-th" id="th-value">库存价值 <span class="sort-icon">⇅</span></th>
+              <th>状态</th><th>操作</th>
             </tr></thead><tbody id="productTable"></tbody></table>
           </div>
           <div class="pagination" id="productPagination"></div>
@@ -579,6 +591,8 @@ let currentImgData = '';
 let productPage = 1, inPage = 1, outPage = 1;
 let PAGE_SIZE = 10;
 let activeCategory = 'all';
+let productSortField = null;   // 'stock' | 'value' | null
+let productSortDir = 'desc';   // 'asc' | 'desc'
 // 分类列表（持久化到 localStorage）
 let categories = [];
 const CAT_KEY = 'erp_categories';
@@ -931,6 +945,21 @@ function renderProducts() {
     (activeCategory === 'all' || p.category === activeCategory) &&
     (p.name.toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q) || (p.note||'').toLowerCase().includes(q))
   );
+  // 排序
+  if (productSortField) {
+    list.sort((a, b) => {
+      const va = productSortField === 'stock' ? a.stock : a.stock * a.avgCost;
+      const vb = productSortField === 'stock' ? b.stock : b.stock * b.avgCost;
+      return productSortDir === 'asc' ? va - vb : vb - va;
+    });
+  }
+  // 更新表头样式
+  ['stock','value'].forEach(f => {
+    const th = document.getElementById(`th-${f}`);
+    if (!th) return;
+    th.classList.remove('sort-asc','sort-desc');
+    if (productSortField === f) th.classList.add(`sort-${productSortDir}`);
+  });
   const total = list.length;
   const pages = Math.ceil(total / PAGE_SIZE) || 1;
   productPage = Math.min(productPage, pages);
@@ -1599,6 +1628,20 @@ function bindEvents() {
   // ⑦ 时间筛选
   document.getElementById('inTimeFilter').onchange = renderIn;
   document.getElementById('outTimeFilter').onchange = renderOut;
+
+  // ⑩ 产品列表排序表头
+  ['stock','value'].forEach(f => {
+    document.getElementById(`th-${f}`)?.addEventListener('click', () => {
+      if (productSortField === f) {
+        productSortDir = productSortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        productSortField = f;
+        productSortDir = 'desc';
+      }
+      productPage = 1;
+      renderProducts();
+    });
+  });
 
   // ⑨ 批量进出库 — 添加行按钮 & 保存按钮
   document.getElementById('txAddRowBtn').addEventListener('click', () => addTxRow(null));
