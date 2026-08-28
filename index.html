@@ -731,15 +731,34 @@ async function fetchAll(silent = false) {
   }
 }
 
-// 轮询（每 15 秒后台静默检测新数据）
+// ─── 轻量心跳：只拉最新时间戳，有变化才拉全量 ────────────────────
+async function heartbeat() {
+  if (localMode) return;
+  try {
+    // 只拉两张表各最新一条的 id，极小流量
+    const [p, t] = await Promise.all([
+      sbFetch('products?select=id&order=created_at.desc&limit=1'),
+      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
+    ]);
+    const newHash = (p[0]?.id||'') + '|' + (t[0]?.id||'') + '|' + (t[0]?.created_at||'');
+    if (lastDataHash && newHash !== lastDataHash) {
+      // 有新数据，拉全量并提示
+      await fetchAll(true);
+      document.getElementById('newDataBanner').classList.add('show');
+    }
+    lastDataHash = newHash;
+  } catch(e) { /* 心跳失败静默忽略 */ }
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => fetchAll(true), 15000);
+  // 心跳每 5 秒检测一次（轻量），全量拉取只在有变化时触发
+  pollTimer = setInterval(heartbeat, 5000);
 }
 
 // ─── Persistence ──────────────────────────────────────────────────
 async function persistProduct(p) {
-  if (localMode) { saveLocal(); return; }
+  if (localMode) { saveLocal(); recalcStocks(); render(); return; }
   try {
     setSyncStatus('loading', '保存中…');
     const row = {
@@ -752,7 +771,13 @@ async function persistProduct(p) {
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(row)
     });
+    // 写入成功后立即本地刷新，不等轮询
+    recalcStocks(); render();
     setSyncStatus('ok', '已同步');
+    // 更新心跳基准，避免自己触发"有新数据"横幅
+    const t = await sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1');
+    const pp = await sbFetch('products?select=id&order=created_at.desc&limit=1');
+    lastDataHash = (pp[0]?.id||'') + '|' + (t[0]?.id||'') + '|' + (t[0]?.created_at||'');
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
 
@@ -760,11 +785,14 @@ async function removeProduct(id) {
   if (localMode) { saveLocal(); return; }
   try {
     await sbFetch(`products?id=eq.${id}`, { method: 'DELETE' });
+    // 删除后立即本地更新
+    db.products = db.products.filter(x => x.id !== id);
+    recalcStocks(); render();
   } catch(e) { toast('删除失败：' + e.message); }
 }
 
 async function persistTx(t) {
-  if (localMode) { saveLocal(); return; }
+  if (localMode) { saveLocal(); recalcStocks(); render(); return; }
   try {
     setSyncStatus('loading', '保存中…');
     const row = {
@@ -777,7 +805,10 @@ async function persistTx(t) {
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(row)
     });
+    // 写入成功立即刷新，并更新心跳 hash 避免误触发横幅
+    recalcStocks(); render();
     setSyncStatus('ok', '已同步');
+    lastDataHash = (db.products[db.products.length-1]?.id||'') + '|' + t.id + '|' + (t.createdAt||new Date().toISOString());
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
 
@@ -785,6 +816,9 @@ async function removeTx(id) {
   if (localMode) { saveLocal(); return; }
   try {
     await sbFetch(`transactions?id=eq.${id}`, { method: 'DELETE' });
+    // 删除后立即本地更新
+    db.transactions = db.transactions.filter(x => x.id !== id);
+    recalcStocks(); render();
   } catch(e) { toast('删除失败：' + e.message); }
 }
 
