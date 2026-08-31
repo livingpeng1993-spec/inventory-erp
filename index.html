@@ -179,11 +179,21 @@
   @media (max-width:640px) {
     .desktop-only { display:none!important; }
     .mobile-card-list { display:block; }
-    .mobile-card { background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px; }
-    .mobile-card-row { display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px; }
-    .mobile-card-label { color:var(--text-sub);font-size:12px; }
+    .mobile-card { background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;position:relative; }
+    .mobile-card-top { display:flex;gap:10px;align-items:flex-start;margin-bottom:10px; }
+    .mobile-card-img { width:52px;height:52px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:20px; }
+    .mobile-card-img img { width:100%;height:100%;object-fit:cover; }
+    .mobile-card-title { font-weight:600;font-size:14px;margin-bottom:2px; }
+    .mobile-card-sku { font-size:11px;color:var(--text-sub); }
+    .mobile-card-stats { display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px; }
+    .mobile-card-stat { background:var(--bg);border-radius:6px;padding:6px 8px;text-align:center; }
+    .mobile-card-stat-label { font-size:10px;color:var(--text-sub);margin-bottom:2px; }
+    .mobile-card-stat-val { font-size:13px;font-weight:600; }
+    .mobile-card-actions { display:flex;gap:6px;flex-wrap:wrap; }
+    .mobile-card-actions .btn { flex:1;min-width:60px;text-align:center;font-size:12px;padding:6px 4px; }
+    .mobile-card-badge { position:absolute;top:10px;right:10px; }
   }
-  @media (min-width:641px) { .mobile-card-list { display:none; } }
+  @media (min-width:641px) { .mobile-card-list { display:none!important; } }
 
   /* 批量操作栏 */
   .batch-bar { display: none; align-items: center; gap: 10px; padding: 8px 16px; background: var(--accent-light); border-bottom: 1px solid #c5d8f8; flex-wrap: wrap; }
@@ -291,7 +301,8 @@
             <button class="btn btn-primary btn-sm" id="batchApplyBtn">应用分类</button>
             <button class="btn btn-ghost btn-sm" id="batchClearBtn">取消选择</button>
           </div>
-          <div style="overflow-x:auto">
+          <!-- 桌面表格 -->
+          <div style="overflow-x:auto" class="desktop-only">
             <table><thead><tr>
               <th class="col-check"><input type="checkbox" id="checkAll" title="全选"></th>
               <th>产品</th><th>SKU</th>
@@ -301,6 +312,8 @@
               <th>状态</th><th>操作</th>
             </tr></thead><tbody id="productTable"></tbody></table>
           </div>
+          <!-- 手机卡片列表 -->
+          <div class="mobile-card-list" id="productCardList"></div>
           <div class="pagination" id="productPagination"></div>
         </div>
       </div>
@@ -1050,6 +1063,83 @@ function renderProducts() {
     checkAll.indeterminate = pageIds.some(id => selectedIds.has(id)) && !checkAll.checked;
   }
   renderPagination('productPagination', total, productPage, p => { productPage=p; renderProducts(); });
+
+  // ── 手机端卡片渲染 ────────────────────────────────────────────────
+  const cardList = document.getElementById('productCardList');
+  cardList.innerHTML = '';
+  list.forEach(p => {
+    const isLow = p.alertQty > 0 && p.stock <= p.alertQty;
+    const card = document.createElement('div');
+    card.className = 'mobile-card';
+
+    // 图片 + 标题
+    const imgDiv = document.createElement('div');
+    imgDiv.className = 'mobile-card-img';
+    if (p.img) {
+      const im = document.createElement('img');
+      im.src = p.img; im.alt = '';
+      im.onerror = () => { imgDiv.textContent = '📷'; };
+      if (p.img) { imgDiv.style.cursor='zoom-in'; imgDiv.addEventListener('click', () => openLightbox(p.img)); }
+      imgDiv.appendChild(im);
+    } else { imgDiv.textContent = '📷'; }
+
+    const titleDiv = document.createElement('div');
+    titleDiv.innerHTML = `<div class="mobile-card-title">${esc(p.name)}</div>
+      <div class="mobile-card-sku">${p.sku ? 'SKU: '+esc(p.sku) : ''}${p.category ? (p.sku?' · ':'')+esc(p.category) : ''}</div>`;
+
+    const topDiv = document.createElement('div');
+    topDiv.className = 'mobile-card-top';
+    topDiv.appendChild(imgDiv);
+    topDiv.appendChild(titleDiv);
+
+    // 低库存徽章
+    if (isLow) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-warn mobile-card-badge';
+      badge.textContent = '低库存';
+      card.appendChild(badge);
+    }
+
+    // 统计数据
+    const statsDiv = document.createElement('div');
+    statsDiv.className = 'mobile-card-stats';
+    const stats = [
+      { label: '库存数量', val: p.stock, color: isLow ? 'var(--red)' : 'var(--text)' },
+      { label: '库存均价', val: '¥'+fmt(p.avgCost), color: 'var(--text)' },
+      { label: '库存价值', val: '¥'+fmt(p.stock*p.avgCost), color: 'var(--accent)' },
+    ];
+    stats.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'mobile-card-stat';
+      el.innerHTML = `<div class="mobile-card-stat-label">${s.label}</div>
+        <div class="mobile-card-stat-val" style="color:${s.color}">${s.val}</div>`;
+      statsDiv.appendChild(el);
+    });
+
+    // 操作按钮
+    const actDiv = document.createElement('div');
+    actDiv.className = 'mobile-card-actions';
+    const inBtn = document.createElement('button');
+    inBtn.className = 'btn btn-sm';
+    inBtn.textContent = '入库';
+    inBtn.style.cssText = 'background:var(--green-light);color:var(--green);border:1px solid #a8dfc1';
+    inBtn.addEventListener('click', () => openTxModal('in', p.id));
+    const outBtn = document.createElement('button');
+    outBtn.className = 'btn btn-sm';
+    outBtn.textContent = '出库';
+    outBtn.style.cssText = 'background:var(--red-light);color:var(--red);border:1px solid #f0b8b8';
+    outBtn.addEventListener('click', () => openTxModal('out', p.id));
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-ghost btn-sm';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', () => openProductModal(p.id));
+    actDiv.append(inBtn, outBtn, editBtn);
+
+    card.appendChild(topDiv);
+    card.appendChild(statsDiv);
+    card.appendChild(actDiv);
+    cardList.appendChild(card);
+  });
 }
 
 function renderIn() { renderTxTable('in'); }
