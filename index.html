@@ -324,9 +324,12 @@
           <div class="table-toolbar">
             <div class="search-box">
               <span style="color:var(--text-sub)">🔍</span>
-              <input id="searchIn" placeholder="搜索产品名称…">
+              <input id="searchIn" placeholder="搜索产品名称/备注/操作人…">
             </div>
-            <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="inOperatorFilter" class="page-size-select">
+                <option value="all">全部操作人</option>
+              </select>
               <select id="inTimeFilter" class="page-size-select">
                 <option value="all">全部时间</option>
                 <option value="month">本月</option>
@@ -351,9 +354,12 @@
           <div class="table-toolbar">
             <div class="search-box">
               <span style="color:var(--text-sub)">🔍</span>
-              <input id="searchOut" placeholder="搜索产品名称…">
+              <input id="searchOut" placeholder="搜索产品名称/备注/操作人…">
             </div>
-            <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="outOperatorFilter" class="page-size-select">
+                <option value="all">全部操作人</option>
+              </select>
               <select id="outTimeFilter" class="page-size-select">
                 <option value="all">全部时间</option>
                 <option value="month">本月</option>
@@ -603,9 +609,12 @@ let editingProductId = null;
 let currentImgData = '';
 let productPage = 1, inPage = 1, outPage = 1;
 let PAGE_SIZE = 10;
+const TX_PAGE_SIZE = 50;  // 进货和出库记录每页显示 50 条
 let activeCategory = 'all';
 let productSortField = null;   // 'stock' | 'value' | null
 let productSortDir = 'desc';   // 'asc' | 'desc'
+// 预设默认品牌分组
+const DEFAULT_CATEGORIES = ['Anua', 'Dr Melaxin', 'LA ROCHE'];
 // 分类列表（持久化到 localStorage）
 let categories = [];
 const CAT_KEY = 'erp_categories';
@@ -750,6 +759,7 @@ async function fetchAll(silent = false) {
       operator: t.operator || ''
     }));
     recalcStocks();
+    loadCategories();
     render();
     setSyncStatus('ok', '已同步');
   } catch(e) {
@@ -937,7 +947,7 @@ function renderSummary() {
 function fmt(n) { return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 function renderCategoryChips() {
-  const cats = ['all', ...new Set(db.products.map(p=>p.category).filter(Boolean))];
+  const cats = ['all', ...new Set([...categories, ...db.products.map(p=>p.category).filter(Boolean)])];
   const container = document.getElementById('categoryChips');
   container.innerHTML = '';
   cats.forEach(c => {
@@ -1150,6 +1160,21 @@ function getTimeFilter(type) {
   return sel ? sel.value : 'all';
 }
 
+function updateOperatorFilterOptions(type) {
+  const sel = document.getElementById(type==='in'?'inOperatorFilter':'outOperatorFilter');
+  if (!sel) return;
+  const currentVal = sel.value || 'all';
+  const ops = [...new Set(db.transactions.filter(t => t.type === type && t.operator).map(t => t.operator.trim()).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="all">全部操作人</option>';
+  ops.forEach(op => {
+    const opt = document.createElement('option');
+    opt.value = op;
+    opt.textContent = op;
+    if (op === currentVal) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
 function inTimeRange(date, filter) {
   if (filter === 'all') return true;
   const d = new Date(date), now = new Date();
@@ -1163,24 +1188,29 @@ function inTimeRange(date, filter) {
 }
 
 function renderTxTable(type) {
+  updateOperatorFilterOptions(type);
   const q = (document.getElementById(type==='in'?'searchIn':'searchOut').value||'').toLowerCase();
   const timeFilter = getTimeFilter(type);
+  const opFilter = document.getElementById(type==='in'?'inOperatorFilter':'outOperatorFilter')?.value || 'all';
   let list = db.transactions.filter(t => {
     const p = db.products.find(x=>x.id===t.productId);
-    return t.type === type &&
-      ((p?.name||'').toLowerCase().includes(q) || (t.note||'').toLowerCase().includes(q)) &&
-      inTimeRange(t.date, timeFilter);
+    const matchText = (p?.name||'').toLowerCase().includes(q) ||
+                      (t.note||'').toLowerCase().includes(q) ||
+                      (t.operator||'').toLowerCase().includes(q);
+    const matchOp = opFilter === 'all' || (t.operator && t.operator.trim() === opFilter);
+    return t.type === type && matchText && matchOp && inTimeRange(t.date, timeFilter);
   }).sort((a,b) => b.date.localeCompare(a.date));
   const total = list.length;
   let page = type==='in' ? inPage : outPage;
-  const pages = Math.ceil(total/PAGE_SIZE)||1;
+  const pages = Math.ceil(total / TX_PAGE_SIZE) || 1;
   page = Math.min(page, pages);
-  if (type==='in') inPage=page; else outPage=page;
-  list = list.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
+  if (type==='in') inPage = page; else outPage = page;
+  list = list.slice((page-1)*TX_PAGE_SIZE, page*TX_PAGE_SIZE);
   const tbody = document.getElementById(type==='in'?'inTable':'outTable');
   tbody.innerHTML = '';
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">${type==='in'?'📥':'📤'}</div>暂无记录</div></td></tr>`;
+    const colCount = type === 'in' ? 8 : 9;
+    tbody.innerHTML = `<tr><td colspan="${colCount}"><div class="empty-state"><div class="icon">${type==='in'?'📥':'📤'}</div>暂无记录</div></td></tr>`;
   } else {
     list.forEach(t => {
       const p = db.products.find(x=>x.id===t.productId);
@@ -1249,12 +1279,12 @@ function renderTxTable(type) {
   }
   renderPagination(type==='in'?'inPagination':'outPagination', total, page, p => {
     if(type==='in') inPage=p; else outPage=p; renderTxTable(type);
-  });
+  }, TX_PAGE_SIZE);
 }
 
-function renderPagination(elId, total, page, cb) {
+function renderPagination(elId, total, page, cb, pageSize = PAGE_SIZE) {
   const el = document.getElementById(elId);
-  const pages = Math.ceil(total / PAGE_SIZE) || 1;
+  const pages = Math.ceil(total / pageSize) || 1;
   el.innerHTML = '';
   if (pages <= 1) return;
 
@@ -1667,8 +1697,8 @@ function bindEvents() {
   }
   // Search boxes
   document.getElementById('searchProducts').oninput = renderProducts;
-  document.getElementById('searchIn').oninput = renderIn;
-  document.getElementById('searchOut').oninput = renderOut;
+  document.getElementById('searchIn').oninput = () => { inPage = 1; renderIn(); };
+  document.getElementById('searchOut').oninput = () => { outPage = 1; renderOut(); };
   // File imports
   document.getElementById('xlsxFile').onchange = e => importExcel(e);
   document.getElementById('importFile').onchange = e => importData(e);
@@ -1715,9 +1745,11 @@ function bindEvents() {
     fetchAll();
   });
 
-  // ⑦ 时间筛选
-  document.getElementById('inTimeFilter').onchange = renderIn;
-  document.getElementById('outTimeFilter').onchange = renderOut;
+  // ⑦ 进出库筛选（时间 + 操作人）
+  document.getElementById('inTimeFilter').onchange = () => { inPage = 1; renderIn(); };
+  document.getElementById('outTimeFilter').onchange = () => { outPage = 1; renderOut(); };
+  document.getElementById('inOperatorFilter').onchange = () => { inPage = 1; renderIn(); };
+  document.getElementById('outOperatorFilter').onchange = () => { outPage = 1; renderOut(); };
 
   // ⑩ 产品列表排序表头
   ['stock','value'].forEach(f => {
@@ -1940,10 +1972,15 @@ function loadCategories() {
     const raw = localStorage.getItem(CAT_KEY);
     categories = raw ? JSON.parse(raw) : [];
   } catch { categories = []; }
+  // 预设默认品牌分组
+  DEFAULT_CATEGORIES.forEach(c => {
+    if (!categories.includes(c)) categories.push(c);
+  });
   // 自动补充产品里已存在的分类
   db.products.forEach(p => {
     if (p.category && !categories.includes(p.category)) categories.push(p.category);
   });
+  saveCategories();
 }
 
 function saveCategories() {
