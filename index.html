@@ -729,22 +729,39 @@ async function sbFetch(path, options = {}) {
   return ct.includes('json') ? res.json() : null;
 }
 
+// 自动分页获取全量数据，突破 Supabase 1000 条单次限制
+async function sbFetchAll(pathAndQuery) {
+  const PAGE_CHUNK = 1000;
+  let allRows = [];
+  let offset = 0;
+  while (true) {
+    const sep = pathAndQuery.includes('?') ? '&' : '?';
+    const chunk = await sbFetch(`${pathAndQuery}${sep}limit=${PAGE_CHUNK}&offset=${offset}`);
+    if (!chunk || !chunk.length) break;
+    allRows = allRows.concat(chunk);
+    if (chunk.length < PAGE_CHUNK) break;
+    offset += PAGE_CHUNK;
+  }
+  return allRows;
+}
+
 // ─── Fetch all data ────────────────────────────────────────────────
 async function fetchAll(silent = false) {
   if (localMode) return;
   try {
     if (!silent) setSyncStatus('loading', '同步中…');
     const [products, transactions] = await Promise.all([
-      sbFetch('products?select=*&order=created_at.asc'),
-      sbFetch('transactions?select=*&order=date.asc,created_at.asc')
+      sbFetchAll('products?select=*&order=created_at.asc'),
+      sbFetchAll('transactions?select=*&order=date.asc,created_at.asc')
     ]);
-    const newHash = JSON.stringify(products.length) + JSON.stringify(transactions.length) +
-      (transactions[transactions.length-1]?.id || '');
-    // 检测到新数据且非首次加载
-    if (lastDataHash && newHash !== lastDataHash) {
-      document.getElementById('newDataBanner').classList.add('show');
-    }
-    lastDataHash = newHash;
+
+    // 对齐最新心跳基准，避免自己拉取后反复触发横幅
+    const [lastP, lastT] = await Promise.all([
+      sbFetch('products?select=id&order=created_at.desc&limit=1'),
+      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
+    ]);
+    lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
+    document.getElementById('newDataBanner')?.classList.remove('show');
 
     db.products = products.map(p => ({
       id: p.id, name: p.name, sku: p.sku || '',
@@ -781,7 +798,7 @@ async function heartbeat() {
     if (lastDataHash && newHash !== lastDataHash) {
       // 有新数据，拉全量并提示
       await fetchAll(true);
-      document.getElementById('newDataBanner').classList.add('show');
+      document.getElementById('newDataBanner')?.classList.add('show');
     }
     lastDataHash = newHash;
   } catch(e) { /* 心跳失败静默忽略 */ }
@@ -812,9 +829,11 @@ async function persistProduct(p) {
     recalcStocks(); render();
     setSyncStatus('ok', '已同步');
     // 更新心跳基准，避免自己触发"有新数据"横幅
-    const t = await sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1');
-    const pp = await sbFetch('products?select=id&order=created_at.desc&limit=1');
-    lastDataHash = (pp[0]?.id||'') + '|' + (t[0]?.id||'') + '|' + (t[0]?.created_at||'');
+    const [lastP, lastT] = await Promise.all([
+      sbFetch('products?select=id&order=created_at.desc&limit=1'),
+      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
+    ]);
+    lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
 
@@ -845,7 +864,11 @@ async function persistTx(t) {
     // 写入成功立即刷新，并更新心跳 hash 避免误触发横幅
     recalcStocks(); render();
     setSyncStatus('ok', '已同步');
-    lastDataHash = (db.products[db.products.length-1]?.id||'') + '|' + t.id + '|' + (t.createdAt||new Date().toISOString());
+    const [lastP, lastT] = await Promise.all([
+      sbFetch('products?select=id&order=created_at.desc&limit=1'),
+      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
+    ]);
+    lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
 
