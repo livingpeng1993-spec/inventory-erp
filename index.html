@@ -591,6 +591,7 @@
 // ─── Config ──────────────────────────────────────────────────────
 const CFG_KEY = 'erp_supabase_config';
 const LOCAL_KEY = 'erp_db_local';
+const CACHE_KEY = 'erp_db_cache_v1';
 const PASS_KEY = 'erp_pass_ok';
 const ERP_PASSWORD = 'erp2026';        // ← 访问密码，可修改
 const OPERATOR_KEY = 'erp_operator';   // 记住操作人姓名
@@ -641,11 +642,40 @@ function launchApp() {
   SB_KEY = BUILTIN_KEY;
   localMode = false;
   showMainApp();
+  // 1. 优先加载本地离线缓存，首屏秒级显示，绝不卡白屏
+  loadCacheData();
+  // 2. 异步同步云端数据
   fetchAll();
   startPolling();
   // 恢复操作人姓名
   const op = localStorage.getItem(OPERATOR_KEY) || '';
   if (op) document.getElementById('txOperator').value = op;
+}
+
+function loadCacheData() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return;
+    const cache = JSON.parse(raw);
+    if (cache.products && Array.isArray(cache.products) && cache.products.length) {
+      db.products = cache.products;
+      db.transactions = cache.transactions || [];
+      recalcStocks();
+      loadCategories();
+      render();
+      setSyncStatus('', '已加载缓存 (正在连接云端…)');
+    }
+  } catch(e) { console.warn('loadCacheData error', e); }
+}
+
+function saveCacheData() {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      products: db.products,
+      transactions: db.transactions,
+      time: Date.now()
+    }));
+  } catch(e) { /* 忽略 quota 限制 */ }
 }
 
 function loadConfig() {
@@ -717,16 +747,29 @@ function sbHeaders() {
 }
 
 async function sbFetch(path, options = {}) {
-  const res = await fetch(SB_URL + '/rest/v1/' + path, {
-    ...options,
-    headers: { ...sbHeaders(), ...(options.headers || {}) }
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`${res.status} ${txt}`);
+  const controller = new AbortController();
+  const timeoutMs = options.timeout || 6000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(SB_URL + '/rest/v1/' + path, {
+      ...options,
+      signal: controller.signal,
+      headers: { ...sbHeaders(), ...(options.headers || {}) }
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`${res.status} ${txt}`);
+    }
+    const ct = res.headers.get('content-type') || '';
+    return ct.includes('json') ? res.json() : null;
+  } catch(err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error('网络请求超时（6秒未响应）');
+    }
+    throw err;
   }
-  const ct = res.headers.get('content-type') || '';
-  return ct.includes('json') ? res.json() : null;
 }
 
 // 自动分页获取全量数据，突破 Supabase 1000 条单次限制
@@ -736,7 +779,7 @@ async function sbFetchAll(pathAndQuery) {
   let offset = 0;
   while (true) {
     const sep = pathAndQuery.includes('?') ? '&' : '?';
-    const chunk = await sbFetch(`${pathAndQuery}${sep}limit=${PAGE_CHUNK}&offset=${offset}`);
+    const chunk = await sbFetch(`${pathAndQuery}${sep}limit=${PAGE_CHUNK}&offset=${offset}`, { timeout: 8000 });
     if (!chunk || !chunk.length) break;
     allRows = allRows.concat(chunk);
     if (chunk.length < PAGE_CHUNK) break;
@@ -749,20 +792,13 @@ async function sbFetchAll(pathAndQuery) {
 async function fetchAll(silent = false) {
   if (localMode) return;
   try {
-    if (!silent) setSyncStatus('loading', '同步中…');
+    if (!silent) setSyncStatus('loading', '连接云端中…');
     const [products, transactions] = await Promise.all([
       sbFetchAll('products?select=*&order=created_at.asc'),
       sbFetchAll('transactions?select=*&order=date.asc,created_at.asc')
     ]);
 
-    // 对齐最新心跳基准，避免自己拉取后反复触发横幅
-    const [lastP, lastT] = await Promise.all([
-      sbFetch('products?select=id&order=created_at.desc&limit=1'),
-      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
-    ]);
-    lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
-    document.getElementById('newDataBanner')?.classList.remove('show');
-
+    // 成功获取数据，立即处理并展示
     db.products = products.map(p => ({
       id: p.id, name: p.name, sku: p.sku || '',
       category: p.category || '', alertQty: p.alert_qty || 0,
@@ -778,10 +814,23 @@ async function fetchAll(silent = false) {
     recalcStocks();
     loadCategories();
     render();
-    setSyncStatus('ok', '已同步');
+    saveCacheData(); // 保存本地快照
+
+    // 对齐最新心跳基准，不再发送额外网络请求
+    const latestP = products[products.length - 1]?.id || '';
+    const latestT = transactions[transactions.length - 1]?.id || '';
+    const latestTTime = transactions[transactions.length - 1]?.created_at || '';
+    lastDataHash = latestP + '|' + latestT + '|' + latestTTime;
+    document.getElementById('newDataBanner')?.classList.remove('show');
+
+    setSyncStatus('ok', '已连接云端');
   } catch(e) {
-    setSyncStatus('err', '同步失败');
     console.error('fetchAll error', e);
+    if (db.products.length > 0) {
+      setSyncStatus('err', '未连上云端 (已展示本地缓存，点击重试)');
+    } else {
+      setSyncStatus('err', '云端连接超时 (请检查网络/代理，点击重试)');
+    }
   }
 }
 
@@ -789,19 +838,17 @@ async function fetchAll(silent = false) {
 async function heartbeat() {
   if (localMode) return;
   try {
-    // 只拉两张表各最新一条的 id，极小流量
     const [p, t] = await Promise.all([
-      sbFetch('products?select=id&order=created_at.desc&limit=1'),
-      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
+      sbFetch('products?select=id&order=created_at.desc&limit=1', { timeout: 4000 }),
+      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1', { timeout: 4000 })
     ]);
     const newHash = (p[0]?.id||'') + '|' + (t[0]?.id||'') + '|' + (t[0]?.created_at||'');
     if (lastDataHash && newHash !== lastDataHash) {
-      // 有新数据，拉全量并提示
       await fetchAll(true);
       document.getElementById('newDataBanner')?.classList.add('show');
     }
     lastDataHash = newHash;
-  } catch(e) { /* 心跳失败静默忽略 */ }
+  } catch(e) { /* 心跳超时静默忽略 */ }
 }
 
 function startPolling() {
@@ -812,7 +859,7 @@ function startPolling() {
 
 // ─── Persistence ──────────────────────────────────────────────────
 async function persistProduct(p) {
-  if (localMode) { saveLocal(); recalcStocks(); render(); return; }
+  if (localMode) { saveLocal(); recalcStocks(); render(); saveCacheData(); return; }
   try {
     setSyncStatus('loading', '保存中…');
     const row = {
@@ -826,14 +873,16 @@ async function persistProduct(p) {
       body: JSON.stringify(row)
     });
     // 写入成功后立即本地刷新，不等轮询
-    recalcStocks(); render();
+    recalcStocks(); render(); saveCacheData();
     setSyncStatus('ok', '已同步');
     // 更新心跳基准，避免自己触发"有新数据"横幅
-    const [lastP, lastT] = await Promise.all([
-      sbFetch('products?select=id&order=created_at.desc&limit=1'),
-      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
-    ]);
-    lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
+    try {
+      const [lastP, lastT] = await Promise.all([
+        sbFetch('products?select=id&order=created_at.desc&limit=1', { timeout: 3000 }),
+        sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1', { timeout: 3000 })
+      ]);
+      lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
+    } catch {}
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
 
@@ -843,12 +892,12 @@ async function removeProduct(id) {
     await sbFetch(`products?id=eq.${id}`, { method: 'DELETE' });
     // 删除后立即本地更新
     db.products = db.products.filter(x => x.id !== id);
-    recalcStocks(); render();
+    recalcStocks(); render(); saveCacheData();
   } catch(e) { toast('删除失败：' + e.message); }
 }
 
 async function persistTx(t) {
-  if (localMode) { saveLocal(); recalcStocks(); render(); return; }
+  if (localMode) { saveLocal(); recalcStocks(); render(); saveCacheData(); return; }
   try {
     setSyncStatus('loading', '保存中…');
     const row = {
@@ -862,13 +911,15 @@ async function persistTx(t) {
       body: JSON.stringify(row)
     });
     // 写入成功立即刷新，并更新心跳 hash 避免误触发横幅
-    recalcStocks(); render();
+    recalcStocks(); render(); saveCacheData();
     setSyncStatus('ok', '已同步');
-    const [lastP, lastT] = await Promise.all([
-      sbFetch('products?select=id&order=created_at.desc&limit=1'),
-      sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1')
-    ]);
-    lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
+    try {
+      const [lastP, lastT] = await Promise.all([
+        sbFetch('products?select=id&order=created_at.desc&limit=1', { timeout: 3000 }),
+        sbFetch('transactions?select=id,created_at&order=created_at.desc&limit=1', { timeout: 3000 })
+      ]);
+      lastDataHash = (lastP?.[0]?.id || '') + '|' + (lastT?.[0]?.id || '') + '|' + (lastT?.[0]?.created_at || '');
+    } catch {}
   } catch(e) { setSyncStatus('err', '保存失败'); toast('保存失败：' + e.message); }
 }
 
@@ -878,7 +929,7 @@ async function removeTx(id) {
     await sbFetch(`transactions?id=eq.${id}`, { method: 'DELETE' });
     // 删除后立即本地更新
     db.transactions = db.transactions.filter(x => x.id !== id);
-    recalcStocks(); render();
+    recalcStocks(); render(); saveCacheData();
   } catch(e) { toast('删除失败：' + e.message); }
 }
 
@@ -1791,6 +1842,14 @@ function bindEvents() {
   // ⑨ 批量进出库 — 添加行按钮 & 保存按钮
   document.getElementById('txAddRowBtn').addEventListener('click', () => addTxRow(null));
   document.getElementById('txSaveBtn').addEventListener('click', () => window.saveTx());
+
+  // 点击同步状态手动重试
+  const syncStatus = document.getElementById('syncStatus');
+  if (syncStatus) {
+    syncStatus.style.cursor = 'pointer';
+    syncStatus.title = '点击重新同步云端';
+    syncStatus.onclick = () => fetchAll(false);
+  }
 
   // ⑧ 图片粘贴（Ctrl+V）
   document.addEventListener('paste', e => {
