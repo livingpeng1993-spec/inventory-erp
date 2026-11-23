@@ -204,11 +204,16 @@
   th.col-check, td.col-check { width: 36px; padding: 10px 6px 10px 14px; }
   input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
 
-  /* 分类管理弹窗 */
-  .cat-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 13px; }
-  .cat-del { background: none; border: none; color: var(--text-sub); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
-  .cat-del:hover { color: var(--red); }
-  .cat-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; min-height: 36px; }
+  /* 分组/分类管理弹窗 */
+  .cat-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
+  .cat-item-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; font-size: 13px; transition: background .15s; }
+  .cat-item-row:hover { background: #f0f3fa; }
+  .cat-item-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .cat-item-name { font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+  .cat-item-count { font-size: 11px; color: var(--text-sub); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+  .cat-item-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .cat-edit-wrap { display: flex; align-items: center; gap: 6px; width: 100%; }
+  .cat-edit-input { flex: 1; padding: 5px 8px; font-size: 13px; border: 1.5px solid var(--accent); border-radius: 6px; outline: none; background: #fff; }
   .cat-add-row { display: flex; gap: 8px; }
   .cat-add-row input { flex: 1; }
 
@@ -290,7 +295,7 @@
                 <option value="30">30条/页</option>
                 <option value="50">50条/页</option>
               </select>
-              <button class="btn btn-ghost btn-sm" id="manageCatBtn">🏷 分类管理</button>
+              <button class="btn btn-ghost btn-sm" id="manageCatBtn">🏷️ 分组管理</button>
               <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ 添加产品</button>
             </div>
           </div>
@@ -512,19 +517,21 @@
   <img id="lightboxImg" src="" alt="">
 </div>
 
-<!-- 分类管理弹窗 -->
+<!-- 分组/分类管理弹窗 -->
 <div class="overlay" id="catModal" style="display:none">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:480px">
     <div class="modal-header">
-      <h2>🏷 分类管理</h2>
+      <h2>🏷️ 分组管理</h2>
       <button class="modal-close" onclick="closeModal('catModal')">✕</button>
     </div>
     <div class="modal-body">
-      <div style="font-size:12px;color:var(--text-sub);margin-bottom:10px">管理产品分类标签，添加后可在产品表单中选择</div>
+      <div style="font-size:12px;color:var(--text-sub);margin-bottom:12px">
+        管理产品分组/分类。支持重新命名与删除，修改后会自动同步关联产品。
+      </div>
       <div class="cat-list" id="catList"></div>
       <div class="cat-add-row">
-        <input type="text" id="catInput" placeholder="输入新分类名称，回车添加">
-        <button class="btn btn-primary btn-sm" id="catAddBtn">添加</button>
+        <input type="text" id="catInput" placeholder="输入新分组名称，回车或点添加">
+        <button class="btn btn-primary btn-sm" id="catAddBtn">＋ 添加分组</button>
       </div>
     </div>
     <div class="modal-footer">
@@ -619,6 +626,8 @@ const DEFAULT_CATEGORIES = ['Anua', 'Dr Melaxin', 'LA ROCHE'];
 // 分类列表（持久化到 localStorage）
 let categories = [];
 const CAT_KEY = 'erp_categories';
+const CAT_INITED_KEY = 'erp_categories_inited_v1';
+let editingCatName = null;
 // 批量编辑勾选状态
 let selectedIds = new Set();
 
@@ -2048,17 +2057,22 @@ function openLightbox(src) {
   lb.style.display = 'flex';
 }
 
-// ─── ② 分类管理 ───────────────────────────────────────────────────
+// ─── ② 分类/分组管理 ─────────────────────────────────────────────────
 function loadCategories() {
   try {
     const raw = localStorage.getItem(CAT_KEY);
     categories = raw ? JSON.parse(raw) : [];
   } catch { categories = []; }
-  // 预设默认品牌分组
-  DEFAULT_CATEGORIES.forEach(c => {
-    if (!categories.includes(c)) categories.push(c);
-  });
-  // 自动补充产品里已存在的分类
+
+  // 仅在首次使用（无缓存且未标记初始化）时注入默认分组
+  if (!localStorage.getItem(CAT_INITED_KEY)) {
+    if (!categories.length) {
+      categories = [...DEFAULT_CATEGORIES];
+    }
+    localStorage.setItem(CAT_INITED_KEY, '1');
+  }
+
+  // 自动补充当前已有产品中的分类（保证用户录入过的产品分类能展示在列表）
   db.products.forEach(p => {
     if (p.category && !categories.includes(p.category)) categories.push(p.category);
   });
@@ -2070,6 +2084,7 @@ function saveCategories() {
 }
 
 function openCatModal() {
+  editingCatName = null;
   renderCatList();
   document.getElementById('catInput').value = '';
   document.getElementById('catModal').style.display = 'flex';
@@ -2079,40 +2094,227 @@ function renderCatList() {
   const container = document.getElementById('catList');
   container.innerHTML = '';
   if (!categories.length) {
-    container.innerHTML = '<span style="font-size:12px;color:var(--text-sub)">暂无分类，在下方添加</span>';
+    container.innerHTML = '<div style="font-size:12px;color:var(--text-sub);padding:16px 0;text-align:center">暂无分组，请在下方输入添加</div>';
     return;
   }
   categories.forEach(c => {
-    const tag = document.createElement('div');
-    tag.className = 'cat-tag';
-    tag.textContent = c;
-    const delBtn = document.createElement('button');
-    delBtn.className = 'cat-del'; delBtn.textContent = '×';
-    delBtn.title = '删除分类';
-    delBtn.onclick = () => {
-      categories = categories.filter(x => x !== c);
-      saveCategories();
-      renderCatList();
-      renderCategoryChips();
-      updateCategoryDatalist();
-    };
-    tag.appendChild(delBtn);
-    container.appendChild(tag);
+    const isEditing = editingCatName === c;
+    const count = db.products.filter(p => p.category === c).length;
+    const row = document.createElement('div');
+    row.className = 'cat-item-row';
+
+    if (isEditing) {
+      const editWrap = document.createElement('div');
+      editWrap.className = 'cat-edit-wrap';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'cat-edit-input';
+      input.value = c;
+      input.placeholder = '输入新分组名称';
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn btn-primary btn-sm';
+      saveBtn.textContent = '保存';
+      saveBtn.style.padding = '4px 10px';
+      saveBtn.style.fontSize = '12px';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-ghost btn-sm';
+      cancelBtn.textContent = '取消';
+      cancelBtn.style.padding = '4px 10px';
+      cancelBtn.style.fontSize = '12px';
+
+      const doSave = async () => {
+        const val = input.value.trim();
+        if (!val || val === c) {
+          editingCatName = null;
+          renderCatList();
+          return;
+        }
+        const ok = await renameCategory(c, val);
+        if (ok) {
+          editingCatName = null;
+          renderCatList();
+        }
+      };
+
+      saveBtn.onclick = doSave;
+      cancelBtn.onclick = () => {
+        editingCatName = null;
+        renderCatList();
+      };
+      input.onkeydown = e => {
+        if (e.key === 'Enter') doSave();
+        if (e.key === 'Escape') {
+          editingCatName = null;
+          renderCatList();
+        }
+      };
+
+      editWrap.appendChild(input);
+      editWrap.appendChild(saveBtn);
+      editWrap.appendChild(cancelBtn);
+      row.appendChild(editWrap);
+
+      container.appendChild(row);
+      setTimeout(() => { input.focus(); input.select(); }, 40);
+    } else {
+      const info = document.createElement('div');
+      info.className = 'cat-item-info';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'cat-item-name';
+      nameSpan.textContent = c;
+      nameSpan.title = c;
+
+      const countBadge = document.createElement('span');
+      countBadge.className = 'cat-item-count';
+      countBadge.textContent = count > 0 ? `${count} 个产品` : '无产品';
+
+      info.appendChild(nameSpan);
+      info.appendChild(countBadge);
+
+      const acts = document.createElement('div');
+      acts.className = 'cat-item-actions';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.textContent = '✏️ 重命名';
+      editBtn.style.padding = '4px 8px';
+      editBtn.style.fontSize = '12px';
+      editBtn.onclick = () => {
+        editingCatName = c;
+        renderCatList();
+      };
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-ghost btn-sm';
+      delBtn.textContent = '🗑️ 删除';
+      delBtn.style.padding = '4px 8px';
+      delBtn.style.fontSize = '12px';
+      delBtn.style.color = 'var(--red)';
+      delBtn.onclick = () => deleteCategory(c);
+
+      acts.appendChild(editBtn);
+      acts.appendChild(delBtn);
+
+      row.appendChild(info);
+      row.appendChild(acts);
+      container.appendChild(row);
+    }
   });
+}
+
+async function renameCategory(oldName, newName) {
+  newName = (newName || '').trim();
+  if (!newName) {
+    toast('分组名称不能为空');
+    return false;
+  }
+  if (newName === oldName) return false;
+  if (categories.includes(newName)) {
+    toast(`分组“${newName}”已存在`);
+    return false;
+  }
+
+  const affected = db.products.filter(p => p.category === oldName);
+
+  // 1. 云端同步：如果有产品，批量更新 Supabase 中对应产品的 category
+  if (!localMode && affected.length > 0) {
+    try {
+      setSyncStatus('loading', '正在更新云端分组…');
+      await sbFetch('products?category=eq.' + encodeURIComponent(oldName), {
+        method: 'PATCH',
+        body: JSON.stringify({ category: newName })
+      });
+      setSyncStatus('ok', '已同步');
+    } catch (err) {
+      console.error(err);
+      toast('云端更新失败：' + err.message);
+      setSyncStatus('err', '更新失败');
+      return false;
+    }
+  }
+
+  // 2. 本地内存更新
+  categories = categories.map(c => c === oldName ? newName : c);
+  affected.forEach(p => { p.category = newName; });
+  if (activeCategory === oldName) {
+    activeCategory = newName;
+  }
+
+  // 3. 持久化与重绘
+  saveCategories();
+  saveCacheData();
+  if (localMode) saveLocal();
+  renderCatList();
+  renderCategoryChips();
+  renderProducts();
+  updateCategoryDatalist();
+  updateBatchBar();
+  toast(`已将“${oldName}”重命名为“${newName}”${affected.length ? `（已同步 ${affected.length} 个产品）` : ''}`);
+  return true;
+}
+
+async function deleteCategory(catName) {
+  const affected = db.products.filter(p => p.category === catName);
+  let confirmMsg = `确定要删除分组“${catName}”吗？`;
+  if (affected.length > 0) {
+    confirmMsg += `\n注意：当前有 ${affected.length} 个产品属于该分组，删除后这些产品将被设为“未分类”。`;
+  }
+  if (!confirm(confirmMsg)) return;
+
+  // 1. 云端同步：如果有产品属于该分组，清空 Supabase 中这些产品的 category
+  if (!localMode && affected.length > 0) {
+    try {
+      setSyncStatus('loading', '正在更新云端分组…');
+      await sbFetch('products?category=eq.' + encodeURIComponent(catName), {
+        method: 'PATCH',
+        body: JSON.stringify({ category: '' })
+      });
+      setSyncStatus('ok', '已同步');
+    } catch (err) {
+      console.error(err);
+      toast('云端删除失败：' + err.message);
+      setSyncStatus('err', '更新失败');
+      return;
+    }
+  }
+
+  // 2. 本地内存更新
+  categories = categories.filter(c => c !== catName);
+  affected.forEach(p => { p.category = ''; });
+  if (activeCategory === catName) {
+    activeCategory = 'all';
+  }
+
+  // 3. 持久化与重绘
+  saveCategories();
+  saveCacheData();
+  if (localMode) saveLocal();
+  renderCatList();
+  renderCategoryChips();
+  renderProducts();
+  updateCategoryDatalist();
+  updateBatchBar();
+  toast(`已删除分组“${catName}”${affected.length ? `（${affected.length} 个产品已转为未分类）` : ''}`);
 }
 
 function addCategory() {
   const input = document.getElementById('catInput');
   const val = input.value.trim();
   if (!val) return;
-  if (categories.includes(val)) { toast('该分类已存在'); return; }
+  if (categories.includes(val)) { toast('该分组已存在'); return; }
   categories.push(val);
   saveCategories();
   renderCatList();
   renderCategoryChips();
+  renderProducts();
   updateCategoryDatalist();
   input.value = '';
   input.focus();
+  toast(`已添加分组“${val}”`);
 }
 
 // 更新产品表单 datalist
